@@ -105,6 +105,25 @@ export type RivalComparison = {
   diagnosis: "engine" | "cornering" | "mixed" | "ahead";
 };
 
+/** Where the team stands on one measurable axis against the whole field. */
+export type FieldRanking = {
+  metric: "speedTrap" | "sector1" | "sector2" | "sector3" | "i1Speed" | "i2Speed";
+  label: string;
+  /** Whether a bigger number is better (speeds) or worse (sector times). */
+  higherIsBetter: boolean;
+  /** The team's best value on this metric. */
+  teamValue: number | null;
+  /** Best in the field, and who set it. */
+  fieldBest: number;
+  fieldBestDriver: string;
+  fieldMedian: number;
+  /** Where the team ranks, 1 = best in the field. */
+  teamRank: number | null;
+  fieldSize: number;
+  /** Gap from the team to the field's best, in the metric's own units. */
+  gapToBest: number | null;
+};
+
 export type SessionTelemetryAnalysis = {
   sessionType: "fp1" | "fp2" | "fp3" | "q" | "r";
   /** Every driver in the session, ranked by best lap. */
@@ -115,6 +134,19 @@ export type SessionTelemetryAnalysis = {
   leadDriver: DriverTelemetrySummary | null;
   /** Comparisons against every driver who out-qualified/out-paced them. */
   rivalsAhead: RivalComparison[];
+  /**
+   * Comparisons against the nearest cars behind too. A team that qualifies
+   * near the front has almost nobody ahead, so "cars ahead" alone says very
+   * little — the margin over the car behind is just as informative about
+   * where the car is strong.
+   */
+  rivalsBehind: RivalComparison[];
+  /** How the team ranks on each measurable axis across the whole field. */
+  fieldRankings: FieldRanking[];
+  /** Best sector times anywhere in the field, and who set them. */
+  idealLap: { sector: 1 | 2 | 3; time: number; driver: string; teamGap: number | null }[];
+  /** The two team-mates compared against each other. */
+  teammateComparison: RivalComparison | null;
 };
 
 export type TeamTelemetryReport = {
@@ -234,6 +266,105 @@ function compare(
 }
 
 /**
+ * Ranks the team against the entire field on each measurable axis.
+ *
+ * This is what makes the analysis useful for a team that qualified near the
+ * front: "P2, only one car ahead" says almost nothing, whereas "3rd fastest
+ * through the speed trap but 8th best in sector 2" localises the weakness
+ * regardless of where they finished.
+ */
+function buildFieldRankings(
+  all: DriverTelemetrySummary[],
+  teamDrivers: DriverTelemetrySummary[],
+): FieldRanking[] {
+  if (teamDrivers.length === 0) return [];
+
+  const specs: {
+    metric: FieldRanking["metric"];
+    label: string;
+    higherIsBetter: boolean;
+    pick: (d: DriverTelemetrySummary) => number | null;
+  }[] = [
+    { metric: "sector1", label: "Sector 1", higherIsBetter: false, pick: (d) => d.bestSectors[0] },
+    { metric: "sector2", label: "Sector 2", higherIsBetter: false, pick: (d) => d.bestSectors[1] },
+    { metric: "sector3", label: "Sector 3", higherIsBetter: false, pick: (d) => d.bestSectors[2] },
+    { metric: "speedTrap", label: "Speed trap", higherIsBetter: true, pick: (d) => d.speedTrap },
+    { metric: "i1Speed", label: "Intermediate 1", higherIsBetter: true, pick: (d) => d.i1Speed },
+    { metric: "i2Speed", label: "Intermediate 2", higherIsBetter: true, pick: (d) => d.i2Speed },
+  ];
+
+  const out: FieldRanking[] = [];
+  for (const spec of specs) {
+    const values = all
+      .map((d) => ({ driver: d, value: spec.pick(d) }))
+      .filter((v): v is { driver: DriverTelemetrySummary; value: number } => v.value != null);
+    if (values.length === 0) continue;
+
+    values.sort((a, b) =>
+      spec.higherIsBetter ? b.value - a.value : a.value - b.value,
+    );
+
+    const teamValues = teamDrivers
+      .map(spec.pick)
+      .filter((v): v is number => v != null);
+    const teamValue =
+      teamValues.length === 0
+        ? null
+        : spec.higherIsBetter
+          ? Math.max(...teamValues)
+          : Math.min(...teamValues);
+
+    const teamRank =
+      teamValue == null ? null : values.findIndex((v) => v.value === teamValue) + 1 || null;
+
+    const sortedForMedian = values.map((v) => v.value).sort((a, b) => a - b);
+    const fieldMedian = sortedForMedian[Math.floor(sortedForMedian.length / 2)];
+
+    out.push({
+      metric: spec.metric,
+      label: spec.label,
+      higherIsBetter: spec.higherIsBetter,
+      teamValue,
+      fieldBest: values[0].value,
+      fieldBestDriver: values[0].driver.acronym,
+      fieldMedian,
+      teamRank,
+      fieldSize: values.length,
+      gapToBest: teamValue == null ? null : Math.abs(teamValue - values[0].value),
+    });
+  }
+  return out;
+}
+
+/**
+ * The field's best time in each sector, and how far the team is off it —
+ * the theoretical lap nobody actually drove.
+ */
+function buildIdealLap(
+  all: DriverTelemetrySummary[],
+  teamDrivers: DriverTelemetrySummary[],
+): SessionTelemetryAnalysis["idealLap"] {
+  const out: SessionTelemetryAnalysis["idealLap"] = [];
+  for (let i = 0; i < 3; i++) {
+    const values = all
+      .map((d) => ({ driver: d, value: d.bestSectors[i] }))
+      .filter((v): v is { driver: DriverTelemetrySummary; value: number } => v.value != null);
+    if (values.length === 0) continue;
+    values.sort((a, b) => a.value - b.value);
+    const teamBest = teamDrivers
+      .map((d) => d.bestSectors[i])
+      .filter((v): v is number => v != null);
+    out.push({
+      sector: (i + 1) as 1 | 2 | 3,
+      time: values[0].value,
+      driver: values[0].driver.acronym,
+      teamGap: teamBest.length > 0 ? Math.min(...teamBest) - values[0].value : null,
+    });
+  }
+  return out;
+}
+
+/**
  * Builds the full report for one team at one race weekend, across every
  * session OpenF1 has data for.
  */
@@ -307,6 +438,14 @@ export async function getTeamTelemetryReport(
           .filter((s) => !s.isTargetTeam && s.bestLap < leadDriver.bestLap)
           .map((rival) => compare(leadDriver, rival))
       : [];
+    // The three closest cars behind, so a front-running team still has
+    // something to compare against.
+    const rivalsBehind = leadDriver
+      ? summaries
+          .filter((s) => !s.isTargetTeam && s.bestLap > leadDriver.bestLap)
+          .slice(0, 3)
+          .map((rival) => compare(leadDriver, rival))
+      : [];
 
     base.sessions.push({
       sessionType: session.sessionType,
@@ -314,6 +453,11 @@ export async function getTeamTelemetryReport(
       teamDrivers,
       leadDriver,
       rivalsAhead,
+      rivalsBehind,
+      fieldRankings: leadDriver ? buildFieldRankings(summaries, teamDrivers) : [],
+      idealLap: buildIdealLap(summaries, teamDrivers),
+      teammateComparison:
+        teamDrivers.length >= 2 ? compare(teamDrivers[0], teamDrivers[1]) : null,
     });
   }
 

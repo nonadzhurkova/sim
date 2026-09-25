@@ -8,9 +8,11 @@ import {
   PhaseDeltaChart,
   DeltaTraceChart,
   SpeedTraceChart,
+  InputTraces,
   SectorBars,
   type PhaseDelta,
 } from "./telemetry-charts";
+import { TrackMap, type TrackPoint } from "./track-map";
 
 type DriverSummary = {
   driverNumber: number;
@@ -36,12 +38,29 @@ type RivalComparison = {
   diagnosis: "engine" | "cornering" | "mixed" | "ahead";
 };
 
+type FieldRanking = {
+  metric: string;
+  label: string;
+  higherIsBetter: boolean;
+  teamValue: number | null;
+  fieldBest: number;
+  fieldBestDriver: string;
+  fieldMedian: number;
+  teamRank: number | null;
+  fieldSize: number;
+  gapToBest: number | null;
+};
+
 type SessionAnalysis = {
   sessionType: "fp1" | "fp2" | "fp3" | "q" | "r";
   drivers: DriverSummary[];
   teamDrivers: DriverSummary[];
   leadDriver: DriverSummary | null;
   rivalsAhead: RivalComparison[];
+  rivalsBehind: RivalComparison[];
+  fieldRankings: FieldRanking[];
+  idealLap: { sector: 1 | 2 | 3; time: number; driver: string; teamGap: number | null }[];
+  teammateComparison: RivalComparison | null;
 };
 
 type Report = {
@@ -52,12 +71,22 @@ type Report = {
   unavailableReason: string | null;
 };
 
+type TracePoint = { speed: number; throttle: number; brake: number; gear: number };
+type LapSide = {
+  acronym: string;
+  teamName: string | null;
+  lapDuration: number;
+  topSpeed: number;
+  fullThrottlePct: number;
+  points: TracePoint[];
+};
 type LapComparison = {
-  target: { acronym: string; teamName: string | null; lapDuration: number; topSpeed: number; fullThrottlePct: number; points: { speed: number }[] };
-  rival: { acronym: string; teamName: string | null; lapDuration: number; topSpeed: number; fullThrottlePct: number; points: { speed: number }[] };
+  target: LapSide;
+  rival: LapSide;
   deltaTrace: { distancePct: number; delta: number }[];
   phaseDeltas: PhaseDelta[];
   totalDelta: number;
+  trackMap: TrackPoint[] | null;
 };
 
 const SESSION_LABELS: Record<string, string> = {
@@ -143,6 +172,12 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
 
   const session = report?.sessions.find((s) => s.sessionType === activeSession) ?? null;
   const accent = getTeamColor(team);
+  // Cars ahead first, then the nearest behind. A team that qualifies at the
+  // front has almost nobody ahead, so showing only those leaves the page
+  // nearly empty — the margin over the car behind is informative too.
+  const comparableRivals = session
+    ? [...session.rivalsAhead, ...session.rivalsBehind]
+    : [];
 
   return (
     <HudPanel title={`${team} — Telemetry Analysis`}>
@@ -234,20 +269,152 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                 </p>
               )}
 
+              {/* Where the team stands across the whole field. This is the
+                  part that stays useful when the team qualifies near the
+                  front and has almost no cars ahead to compare against. */}
+              {session.fieldRankings.length > 0 && (
+                <div className="mt-6">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                    {"//"} Field ranking — where {team} stands on each measure
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {session.fieldRankings.map((r) => {
+                      const good = r.teamRank != null && r.teamRank <= 3;
+                      const poor = r.teamRank != null && r.teamRank > 8;
+                      const unit = r.higherIsBetter ? " km/h" : "s";
+                      return (
+                        <div
+                          key={r.metric}
+                          className="border border-slate-800/80 bg-slate-900/30 px-3 py-2"
+                        >
+                          <div className="flex items-baseline justify-between">
+                            <span className="hud-mono text-[10px] uppercase tracking-wider text-slate-500">
+                              {r.label}
+                            </span>
+                            <span
+                              className={`hud-mono text-sm font-semibold ${
+                                good ? "text-green-400" : poor ? "text-red-400" : "text-amber-400"
+                              }`}
+                            >
+                              P{r.teamRank ?? "—"}
+                              <span className="text-[10px] text-slate-600">/{r.fieldSize}</span>
+                            </span>
+                          </div>
+                          {/* position of the team within the field's range */}
+                          <div className="relative mt-2 h-1.5 bg-slate-800">
+                            <div
+                              className="absolute top-0 h-full bg-cyan-500"
+                              style={{
+                                width: `${
+                                  r.teamRank != null
+                                    ? Math.max(4, (1 - (r.teamRank - 1) / r.fieldSize) * 100)
+                                    : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                          <div className="hud-mono mt-1.5 flex justify-between text-[9px] text-slate-600">
+                            <span>
+                              {r.teamValue != null
+                                ? r.higherIsBetter
+                                  ? `${r.teamValue}${unit}`
+                                  : `${r.teamValue.toFixed(3)}${unit}`
+                                : "—"}
+                            </span>
+                            <span>
+                              best {r.higherIsBetter ? r.fieldBest : r.fieldBest.toFixed(3)} (
+                              {r.fieldBestDriver})
+                            </span>
+                          </div>
+                          {r.gapToBest != null && r.gapToBest > 0 && (
+                            <div className="hud-mono text-[9px] text-red-400/80">
+                              −{r.higherIsBetter ? r.gapToBest : r.gapToBest.toFixed(3)}
+                              {unit} off best
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Ideal lap: the field's best sector times, and the team's gap
+                  to each. Shows what was theoretically on the table. */}
+              {session.idealLap.length > 0 && (
+                <div className="mt-6">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                    {"//"} Field ideal lap
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    {session.idealLap.map((s) => (
+                      <div
+                        key={s.sector}
+                        className="border border-slate-800/80 bg-slate-900/30 px-3 py-2 text-center"
+                      >
+                        <div className="hud-mono text-[10px] uppercase tracking-wider text-slate-500">
+                          Sector {s.sector}
+                        </div>
+                        <div className="hud-mono mt-1 text-sm text-cyan-300">
+                          {s.time.toFixed(3)}
+                        </div>
+                        <div className="hud-mono text-[9px] text-slate-600">{s.driver}</div>
+                        {s.teamGap != null && (
+                          <div
+                            className={`hud-mono mt-1 text-[10px] ${
+                              s.teamGap <= 0.001 ? "text-green-400" : "text-red-400"
+                            }`}
+                          >
+                            {s.teamGap <= 0.001 ? "FASTEST" : `+${s.teamGap.toFixed(3)}`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Team-mate head to head. */}
+              {session.teammateComparison && (
+                <div className="mt-6">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                    {"//"} Team-mates
+                  </p>
+                  <div className="mt-3 border border-slate-800/80 px-3 py-3">
+                    <p className="hud-mono mb-2 text-[11px] text-slate-400">
+                      {session.teamDrivers[0]?.acronym} vs{" "}
+                      {session.teammateComparison.rival.acronym} ·{" "}
+                      <span
+                        className={
+                          session.teammateComparison.lapDelta <= 0
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }
+                      >
+                        {session.teammateComparison.lapDelta >= 0 ? "+" : ""}
+                        {session.teammateComparison.lapDelta.toFixed(3)}s
+                      </span>
+                    </p>
+                    <SectorBars sectors={session.teammateComparison.sectors} />
+                  </div>
+                </div>
+              )}
+
               {/* rivals ahead */}
               {session.leadDriver && session.rivalsAhead.length === 0 && (
-                <p className="hud-mono mt-4 text-xs text-green-400">
-                  ✓ {session.leadDriver.acronym} WAS FASTEST — NO CAR AHEAD TO COMPARE.
+                <p className="hud-mono mt-6 text-xs text-green-400">
+                  ✓ {session.leadDriver.acronym} WAS FASTEST — NO CAR AHEAD. COMPARISONS BELOW
+                  ARE AGAINST THE CARS BEHIND.
                 </p>
               )}
 
-              {session.rivalsAhead.length > 0 && session.leadDriver && (
-                <div className="mt-5">
+              {session.leadDriver && comparableRivals.length > 0 && (
+                <div className="mt-6">
                   <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-                    {"//"} {session.leadDriver.acronym} vs cars ahead
+                    {"//"} {session.leadDriver.acronym} head to head
                   </p>
                   <div className="mt-3 flex flex-col gap-3">
-                    {session.rivalsAhead.map((c) => {
+                    {comparableRivals.map((c) => {
                       const d = DIAGNOSIS_TEXT[c.diagnosis];
                       const isOpen = activeRival === c.rival.driverNumber;
                       return (
@@ -263,8 +430,13 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                               </span>
                             </div>
                             <div className="flex items-center gap-4">
-                              <span className="hud-mono text-sm font-semibold text-red-400">
-                                +{c.lapDelta.toFixed(3)}s
+                              <span
+                                className={`hud-mono text-sm font-semibold ${
+                                  c.lapDelta > 0 ? "text-red-400" : "text-green-400"
+                                }`}
+                              >
+                                {c.lapDelta >= 0 ? "+" : ""}
+                                {c.lapDelta.toFixed(3)}s
                               </span>
                               <span className={`hud-mono text-[10px] uppercase ${d.className}`}>
                                 {d.label}
@@ -318,7 +490,18 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                                     targetLabel={lapComparison.target.acronym}
                                     rivalLabel={lapComparison.rival.acronym}
                                   />
+                                  {lapComparison.trackMap && (
+                                    <TrackMap
+                                      points={lapComparison.trackMap}
+                                      targetLabel={lapComparison.target.acronym}
+                                      rivalLabel={lapComparison.rival.acronym}
+                                    />
+                                  )}
                                   <SpeedTraceChart
+                                    target={lapComparison.target}
+                                    rival={lapComparison.rival}
+                                  />
+                                  <InputTraces
                                     target={lapComparison.target}
                                     rival={lapComparison.rival}
                                   />
@@ -345,8 +528,15 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                                       <div className="text-[9px] uppercase tracking-wider text-slate-600">
                                         Total delta
                                       </div>
-                                      <div className="text-sm font-semibold text-red-400">
-                                        +{lapComparison.totalDelta.toFixed(3)}s
+                                      <div
+                                        className={`text-sm font-semibold ${
+                                          lapComparison.totalDelta > 0
+                                            ? "text-red-400"
+                                            : "text-green-400"
+                                        }`}
+                                      >
+                                        {lapComparison.totalDelta >= 0 ? "+" : ""}
+                                        {lapComparison.totalDelta.toFixed(3)}s
                                       </div>
                                     </div>
                                   </div>

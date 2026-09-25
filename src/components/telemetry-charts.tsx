@@ -276,3 +276,81 @@ export function SectorBars({
     </div>
   );
 }
+
+type TracePoint = { speed: number; throttle: number; brake: number; gear: number };
+
+/**
+ * Stacked throttle / brake / gear traces for both cars.
+ *
+ * Speed alone says where a car is slower; these say *why*. An earlier brake
+ * application or a later throttle pickup is visible here and nowhere else,
+ * and it distinguishes a driver-confidence problem from a car problem.
+ */
+export function InputTraces({
+  target,
+  rival,
+}: {
+  target: { acronym: string; teamName: string | null; points: TracePoint[] };
+  rival: { acronym: string; teamName: string | null; points: TracePoint[] };
+}) {
+  const W = 800;
+  const targetColor = getTeamColor(target.teamName);
+  const rivalColor = getTeamColor(rival.teamName);
+
+  const line = (points: TracePoint[], pick: (p: TracePoint) => number, max: number, h: number) =>
+    points
+      .map((p, i) => {
+        const x = (i / Math.max(1, points.length - 1)) * W;
+        const y = h - (pick(p) / max) * (h - 4) - 2;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+
+  const rows: { label: string; pick: (p: TracePoint) => number; max: number; h: number }[] = [
+    { label: "Throttle %", pick: (p) => p.throttle, max: 100, h: 70 },
+    { label: "Brake", pick: (p) => (p.brake > 0 ? 100 : 0), max: 100, h: 44 },
+    { label: "Gear", pick: (p) => p.gear, max: 8, h: 56 },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+          Driver inputs
+        </p>
+        <div className="hud-mono flex gap-3 text-[10px]">
+          <span style={{ color: targetColor }}>━ {target.acronym}</span>
+          <span style={{ color: rivalColor }}>━ {rival.acronym}</span>
+        </div>
+      </div>
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="hud-mono text-[9px] uppercase tracking-wider text-slate-600">
+            {row.label}
+          </div>
+          <svg
+            viewBox={`0 0 ${W} ${row.h}`}
+            className="w-full"
+            preserveAspectRatio="none"
+            height={row.h}
+          >
+            <rect x="0" y="0" width={W} height={row.h} fill="#0b1015" />
+            <polyline
+              points={line(rival.points, row.pick, row.max, row.h)}
+              fill="none"
+              stroke={rivalColor}
+              strokeWidth="1.5"
+              opacity="0.7"
+            />
+            <polyline
+              points={line(target.points, row.pick, row.max, row.h)}
+              fill="none"
+              stroke={targetColor}
+              strokeWidth="2"
+            />
+          </svg>
+        </div>
+      ))}
+    </div>
+  );
+}

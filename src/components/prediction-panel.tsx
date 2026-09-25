@@ -39,6 +39,17 @@ type SimResult = {
 const INITIAL_ROW_COUNT = 10;
 const ITERATION_OPTIONS = [2000, 8000, 20000];
 
+/**
+ * Thousands separator that does not depend on locale.
+ *
+ * toLocaleString() formats using the *server*'s locale during SSR and the
+ * browser's on hydration, which produced "2000" vs "2,000" and a hydration
+ * mismatch. Formatting explicitly keeps both renders identical.
+ */
+function thousands(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 function pct(v: number): string {
   if (v >= 0.995) return "100";
   if (v > 0 && v < 0.001) return "<0.1";
@@ -154,7 +165,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
                   : "border-slate-800 text-slate-500 hover:border-slate-700"
               }`}
             >
-              {n.toLocaleString()}
+              {thousands(n)}
             </button>
           ))}
         </div>
@@ -181,8 +192,8 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           <div className="flex items-baseline justify-between">
             <p className="hud-mono text-xs text-cyan-400">
               SIMULATING<span className="hud-ellipsis" /> {progress
-                ? `${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()}`
-                : iterations.toLocaleString()}{" "}
+                ? `${thousands(progress.completed)} / ${thousands(progress.total)}`
+                : thousands(iterations)}{" "}
               RACES
             </p>
             <p className="hud-mono text-xs text-cyan-300">
@@ -211,7 +222,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
         <>
           {result && state === "done" ? (
             <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-500">
-              {result.iterations.toLocaleString()} iterations ·{" "}
+              {thousands(result.iterations)} iterations ·{" "}
               {!result.hasRealGrid ? (
                 <span className="text-amber-400">grid simulated (no qualifying yet)</span>
               ) : result.gridIsProvisional ? (

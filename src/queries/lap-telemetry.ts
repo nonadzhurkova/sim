@@ -27,6 +27,20 @@ export type TelemetryPoint = {
   phase: "straight" | "braking" | "cornering" | "accelerating";
 };
 
+/** One point of the racing line, with the time delta at that point. */
+export type TrackPoint = {
+  x: number;
+  y: number;
+  /** 0-1 progress around the lap. */
+  progress: number;
+  speed: number;
+  /** Cumulative delta to the rival here; positive = target is behind. */
+  delta: number;
+  /** Change in delta over this segment; positive = losing time here. */
+  segmentDelta: number;
+  phase: TelemetryPoint["phase"];
+};
+
 export type LapTrace = {
   driverNumber: number;
   acronym: string;
@@ -57,6 +71,12 @@ export type LapComparison = {
   /** Where the time actually goes, grouped by what the car is doing. */
   phaseDeltas: PhaseDelta[];
   totalDelta: number;
+  /**
+   * The racing line in track coordinates, with the time delta at each point,
+   * so the map can be coloured by where time is won and lost. Null when the
+   * location feed is unavailable for the lap.
+   */
+  trackMap: TrackPoint[] | null;
 };
 
 type CarDataPoint = {
@@ -84,6 +104,60 @@ type OpenF1Driver = {
   name_acronym: string;
   team_name: string | null;
 };
+
+type LocationPoint = { date: string; x: number; y: number };
+
+/**
+ * Fetches the racing line for one lap and attaches the running time delta to
+ * each point, so the track can be drawn and coloured by where time is lost.
+ */
+async function buildTrackMap(
+  sessionKey: number,
+  driverNumber: number,
+  lapStart: Date,
+  lapDuration: number,
+  deltaTrace: { distancePct: number; delta: number }[],
+  points: TelemetryPoint[],
+): Promise<TrackPoint[] | null> {
+  const end = new Date(lapStart.getTime() + lapDuration * 1000);
+  const locations = await fetchJson<LocationPoint>(
+    `/location?session_key=${sessionKey}&driver_number=${driverNumber}` +
+      `&date%3E${encodeURIComponent(lapStart.toISOString())}` +
+      `&date%3C${encodeURIComponent(end.toISOString())}`,
+  );
+  if (!locations || locations.length < 10) return null;
+
+  const t0 = new Date(locations[0].date).getTime();
+  const deltaAt = (progress: number): number => {
+    const idx = Math.min(
+      deltaTrace.length - 1,
+      Math.max(0, Math.round(progress * (deltaTrace.length - 1))),
+    );
+    return deltaTrace[idx]?.delta ?? 0;
+  };
+
+  const out: TrackPoint[] = [];
+  for (let i = 0; i < locations.length; i++) {
+    const loc = locations[i];
+    // Progress by elapsed time within the lap. The location feed and the car
+    // data feed are sampled independently, so they are aligned on the lap's
+    // own clock rather than by index.
+    const progress = Math.min(1, (new Date(loc.date).getTime() - t0) / (lapDuration * 1000));
+    const delta = deltaAt(progress);
+    const prevDelta = i === 0 ? delta : out[i - 1].delta;
+    const speedIdx = Math.min(points.length - 1, Math.floor(progress * points.length));
+    out.push({
+      x: loc.x,
+      y: loc.y,
+      progress,
+      speed: points[speedIdx]?.speed ?? 0,
+      delta,
+      segmentDelta: delta - prevDelta,
+      phase: points[speedIdx]?.phase ?? "cornering",
+    });
+  }
+  return out;
+}
 
 async function fetchJson<T>(path: string): Promise<T[] | null> {
   const res = await openF1Fetch<T>(path);
@@ -187,7 +261,7 @@ function compareLaps(target: LapTrace, rival: LapTrace): LapComparison {
   const tTotal = tc[tc.length - 1]?.dist ?? 0;
   const rTotal = rc[rc.length - 1]?.dist ?? 0;
   if (tTotal === 0 || rTotal === 0) {
-    return { target, rival, deltaTrace: [], phaseDeltas: [], totalDelta: target.lapDuration - rival.lapDuration };
+    return { target, rival, deltaTrace: [], phaseDeltas: [], totalDelta: target.lapDuration - rival.lapDuration, trackMap: null };
   }
 
   const timeAt = (c: { dist: number; t: number }[], total: number, pct: number): number => {
@@ -241,6 +315,7 @@ function compareLaps(target: LapTrace, rival: LapTrace): LapComparison {
     deltaTrace,
     phaseDeltas,
     totalDelta: target.lapDuration - rival.lapDuration,
+    trackMap: null,
   };
 }
 
@@ -280,5 +355,19 @@ export async function compareFastestLaps(
   const rivalTrace = await buildTrace(sessionKey, rivalDriver, rivalLap);
   if (!targetTrace || !rivalTrace) return null;
 
-  return compareLaps(targetTrace, rivalTrace);
+  const comparison = compareLaps(targetTrace, rivalTrace);
+
+  // Track geometry comes from a separate feed and is optional: the analysis
+  // is still meaningful without a map, so a failure here degrades the page
+  // rather than failing it.
+  comparison.trackMap = await buildTrackMap(
+    sessionKey,
+    targetDriver.driver_number,
+    new Date(targetLap.date_start as string),
+    targetLap.lap_duration as number,
+    comparison.deltaTrace,
+    targetTrace.points,
+  );
+
+  return comparison;
 }
