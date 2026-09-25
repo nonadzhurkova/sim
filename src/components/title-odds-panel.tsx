@@ -236,11 +236,15 @@ export function TitleOddsPanel({ season }: { season: number }) {
         )}
       </div>
       {progress && (
-        <div className="relative mt-2 h-1 overflow-hidden bg-slate-900/80">
+        <div className="relative mt-2 h-1.5 overflow-hidden bg-slate-900/80">
           <div
-            className="h-full bg-cyan-400 shadow-[0_0_8px_0_rgba(34,211,238,0.7)] transition-[width] duration-200 ease-linear"
+            className="hud-pulse h-full bg-cyan-400 shadow-[0_0_8px_0_rgba(34,211,238,0.7)] transition-[width] duration-200 ease-linear"
             style={{ width: `${(progress.completed / progress.total) * 100}%` }}
           />
+          {/* Sweeping highlight so the bar reads as actively working even in
+              the gaps between progress ticks, which is otherwise
+              indistinguishable from having stalled. */}
+          <div className="hud-scan pointer-events-none absolute inset-y-0 w-1/3" />
         </div>
       )}
     </>

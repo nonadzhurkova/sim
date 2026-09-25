@@ -205,7 +205,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           </div>
           <div className="relative mt-1.5 h-1.5 overflow-hidden bg-slate-900/80">
             <div
-              className="h-full bg-cyan-400 shadow-[0_0_10px_0_rgba(34,211,238,0.8)] transition-[width] duration-200 ease-linear"
+              className="hud-pulse h-full bg-cyan-400 shadow-[0_0_10px_0_rgba(34,211,238,0.8)] transition-[width] duration-200 ease-linear"
               style={{
                 width: `${progress && progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
               }}

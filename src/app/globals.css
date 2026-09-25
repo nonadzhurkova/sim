@@ -67,6 +67,23 @@ body {
   animation: hud-scan 1.1s linear infinite;
 }
 
+/* Flickering brightness on a progress fill, so it reads as actively
+   computing rather than a static bar that happens to be partway across —
+   distinct from .hud-scan's traveling highlight, meant to be layered with it. */
+@keyframes hud-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.5);
+  }
+}
+
+.hud-pulse {
+  animation: hud-pulse 0.6s ease-in-out infinite;
+}
+
 /* Animated "..." that doesn't reflow the text around it. */
 @keyframes hud-ellipsis {
   0% {
@@ -93,6 +110,7 @@ body {
    numbers still update, but the decorative sweep and ellipsis hold still. */
 @media (prefers-reduced-motion: reduce) {
   .hud-scan,
+  .hud-pulse,
   .hud-ellipsis::after {
     animation: none;
   }
