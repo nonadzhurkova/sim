@@ -91,7 +91,7 @@ type LapInfo = { driverId: number; lapNumber: number; lapDuration: number | null
  * looks "slow" if all 14 laps are pooled together). Isolated quick/slow
  * laps are kept as-is.
  */
-function excludeRaceSimLaps(sortedLapDurations: number[]): number[] {
+function findRaceSimLapFlags(sortedLapDurations: number[]): boolean[] {
   const n = sortedLapDurations.length;
   const isSimLap = new Array(n).fill(false);
 
@@ -108,8 +108,18 @@ function excludeRaceSimLaps(sortedLapDurations: number[]): number[] {
       }
     }
   }
+  return isSimLap;
+}
 
+function excludeRaceSimLaps(sortedLapDurations: number[]): number[] {
+  const isSimLap = findRaceSimLapFlags(sortedLapDurations);
   return sortedLapDurations.filter((_, i) => !isSimLap[i]);
+}
+
+/** The race-sim (long-run) laps only — the inverse of excludeRaceSimLaps. */
+function extractRaceSimLaps(sortedLapDurations: number[]): number[] {
+  const isSimLap = findRaceSimLapFlags(sortedLapDurations);
+  return sortedLapDurations.filter((_, i) => isSimLap[i]);
 }
 
 /**
@@ -203,8 +213,221 @@ async function computeSessionCompoundRelativePace(sessionId: number): Promise<Ma
   return result;
 }
 
+/**
+ * Field-relative projected race pace per driver for one race weekend, using
+ * the long-run "race simulation" laps that computePracticePace deliberately
+ * discards (see excludeRaceSimLaps). For each dry FP session, per compound:
+ * each driver's average lap time across their race-sim run(s) is compared
+ * to the field's average on that same compound, weighted by sample size —
+ * same method as qualifying pace, but using run averages instead of best
+ * laps, since race pace is about sustained pace, not one-lap performance.
+ * Does not yet model degradation-within-a-run (see project notes).
+ */
+export async function computeRacePaceProjection(raceId: number): Promise<Map<number, number>> {
+  const fpSessions = await db
+    .select({ id: sessions.id, sessionType: sessions.sessionType, weather: sessions.weather })
+    .from(sessions)
+    .where(and(eq(sessions.raceId, raceId), inArray(sessions.sessionType, ["fp1", "fp2", "fp3"])));
+
+  const dryFpSessions = fpSessions.filter((s) => s.weather !== "wet") as {
+    id: number;
+    sessionType: "fp1" | "fp2" | "fp3";
+  }[];
+  if (dryFpSessions.length === 0) return new Map();
+
+  const sessionPaceByType = new Map<"fp1" | "fp2" | "fp3", Map<number, number>>();
+  for (const session of dryFpSessions) {
+    const pace = await computeSessionRaceSimRelativePace(session.id);
+    sessionPaceByType.set(session.sessionType, pace);
+  }
+
+  const availableTypes = [...sessionPaceByType.keys()];
+  const totalWeight = availableTypes.reduce((sum, t) => sum + FP_BASE_WEIGHTS[t], 0);
+
+  const allDriverIds = new Set<number>();
+  for (const paceMap of sessionPaceByType.values()) {
+    for (const driverId of paceMap.keys()) allDriverIds.add(driverId);
+  }
+
+  const result = new Map<number, number>();
+  for (const driverId of allDriverIds) {
+    let weightedSum = 0;
+    let weightUsed = 0;
+    for (const type of availableTypes) {
+      const pace = sessionPaceByType.get(type)?.get(driverId);
+      if (pace == null) continue;
+      const w = FP_BASE_WEIGHTS[type] / totalWeight;
+      weightedSum += pace * w;
+      weightUsed += w;
+    }
+    if (weightUsed > 0) {
+      result.set(driverId, weightedSum / weightUsed);
+    }
+  }
+  return result;
+}
+
+async function computeSessionRaceSimRelativePace(sessionId: number): Promise<Map<number, number>> {
+  const sessionStints: StintInfo[] = await db
+    .select({
+      id: stints.id,
+      driverId: stints.driverId,
+      compound: stints.compound,
+      lapStart: stints.lapStart,
+      lapEnd: stints.lapEnd,
+    })
+    .from(stints)
+    .where(eq(stints.sessionId, sessionId));
+
+  const sessionLaps: LapInfo[] = await db
+    .select({ driverId: laps.driverId, lapNumber: laps.lapNumber, lapDuration: laps.lapDuration })
+    .from(laps)
+    .where(and(eq(laps.sessionId, sessionId), eq(laps.isPitInOut, false)));
+
+  const lapsByStint = new Map<number, number[]>();
+  for (const stint of sessionStints) {
+    if (!stint.compound || stint.lapStart == null || stint.lapEnd == null) continue;
+    if (stint.compound === "UNKNOWN" || stint.compound === "TEST_UNKNOWN") continue;
+    const stintLaps = sessionLaps
+      .filter(
+        (l) =>
+          l.driverId === stint.driverId &&
+          l.lapNumber >= stint.lapStart! &&
+          l.lapNumber <= stint.lapEnd! &&
+          l.lapDuration != null,
+      )
+      .sort((a, b) => a.lapNumber - b.lapNumber)
+      .map((l) => l.lapDuration!);
+    lapsByStint.set(stint.id, stintLaps);
+  }
+
+  // driverId+compound -> race-sim (long-run) lap durations only
+  const simLapsByDriverCompound = new Map<string, number[]>();
+  for (const stint of sessionStints) {
+    if (!stint.compound || stint.compound === "UNKNOWN" || stint.compound === "TEST_UNKNOWN") continue;
+    const stintLaps = lapsByStint.get(stint.id);
+    if (!stintLaps || stintLaps.length === 0) continue;
+
+    const simRuns = extractRaceSimLaps(stintLaps);
+    if (simRuns.length === 0) continue;
+
+    const key = `${stint.driverId}:${stint.compound}`;
+    if (!simLapsByDriverCompound.has(key)) simLapsByDriverCompound.set(key, []);
+    simLapsByDriverCompound.get(key)!.push(...simRuns);
+  }
+
+  // average race-sim pace per driver per compound
+  const avgByCompound = new Map<string, Map<number, number>>();
+  for (const [key, durations] of simLapsByDriverCompound) {
+    const [driverIdStr, compound] = key.split(":");
+    const driverId = parseInt(driverIdStr, 10);
+    const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+    if (!avgByCompound.has(compound)) avgByCompound.set(compound, new Map());
+    avgByCompound.get(compound)!.set(driverId, avg);
+  }
+
+  const compoundRelativePaces = new Map<number, { pace: number; weight: number }[]>();
+  for (const [, driverAvgs] of avgByCompound) {
+    if (driverAvgs.size === 0) continue;
+    const fieldMedian = median([...driverAvgs.values()]);
+    const sampleWeight = driverAvgs.size;
+    for (const [driverId, avg] of driverAvgs) {
+      if (!compoundRelativePaces.has(driverId)) compoundRelativePaces.set(driverId, []);
+      compoundRelativePaces.get(driverId)!.push({ pace: avg - fieldMedian, weight: sampleWeight });
+    }
+  }
+
+  const result = new Map<number, number>();
+  for (const [driverId, entries] of compoundRelativePaces) {
+    const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
+    const weightedPace = entries.reduce((sum, e) => sum + e.pace * e.weight, 0) / totalWeight;
+    result.set(driverId, weightedPace);
+  }
+  return result;
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+export type StintPaceBreakdown = {
+  sessionType: "fp1" | "fp2" | "fp3";
+  stintNumber: number;
+  compound: string;
+  lapCount: number;
+  avgLapTime: number;
+  bestLapTime: number;
+};
+
+/**
+ * Per-stint pace detail for one driver across this weekend's dry FP
+ * sessions: compound, lap count, and average/best clean lap time (same
+ * race-sim exclusion and outlier filtering as computePracticePace, but
+ * returned per-stint rather than collapsed into one relative-pace number).
+ * Used to show the "why" behind a driver's projected race pace.
+ */
+export async function getDriverStintBreakdown(
+  raceId: number,
+  driverId: number,
+): Promise<StintPaceBreakdown[]> {
+  const fpSessions = await db
+    .select({ id: sessions.id, sessionType: sessions.sessionType, weather: sessions.weather })
+    .from(sessions)
+    .where(and(eq(sessions.raceId, raceId), inArray(sessions.sessionType, ["fp1", "fp2", "fp3"])));
+  const dryFpSessions = fpSessions.filter((s) => s.weather !== "wet") as {
+    id: number;
+    sessionType: "fp1" | "fp2" | "fp3";
+  }[];
+
+  const breakdown: StintPaceBreakdown[] = [];
+  for (const session of dryFpSessions) {
+    const driverStints = await db
+      .select({
+        stintNumber: stints.stintNumber,
+        compound: stints.compound,
+        lapStart: stints.lapStart,
+        lapEnd: stints.lapEnd,
+      })
+      .from(stints)
+      .where(and(eq(stints.sessionId, session.id), eq(stints.driverId, driverId)));
+
+    for (const stint of driverStints) {
+      if (!stint.compound || stint.compound === "UNKNOWN" || stint.compound === "TEST_UNKNOWN") continue;
+      if (stint.lapStart == null || stint.lapEnd == null) continue;
+
+      const stintLaps = await db
+        .select({ lapNumber: laps.lapNumber, lapDuration: laps.lapDuration })
+        .from(laps)
+        .where(
+          and(
+            eq(laps.sessionId, session.id),
+            eq(laps.driverId, driverId),
+            eq(laps.isPitInOut, false),
+          ),
+        );
+      const durations = stintLaps
+        .filter((l) => l.lapNumber >= stint.lapStart! && l.lapNumber <= stint.lapEnd! && l.lapDuration != null)
+        .sort((a, b) => a.lapNumber - b.lapNumber)
+        .map((l) => l.lapDuration!);
+
+      const clean = excludeRaceSimLaps(durations);
+      if (clean.length === 0) continue;
+
+      const best = Math.min(...clean);
+      const filtered = clean.filter((d) => d <= best * OUT_LAP_THRESHOLD);
+      if (filtered.length === 0) continue;
+
+      breakdown.push({
+        sessionType: session.sessionType,
+        stintNumber: stint.stintNumber,
+        compound: stint.compound,
+        lapCount: filtered.length,
+        avgLapTime: filtered.reduce((a, b) => a + b, 0) / filtered.length,
+        bestLapTime: Math.min(...filtered),
+      });
+    }
+  }
+  return breakdown;
 }

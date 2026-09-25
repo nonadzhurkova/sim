@@ -1,4 +1,4 @@
-import { computePracticePace } from "@/ratings/practice-pace";
+import { computeRacePaceProjection } from "@/ratings/practice-pace";
 import { toRankedPaceRows } from "@/queries/pace-projection";
 
 export async function GET(req: Request) {
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
     return Response.json({ error: "Invalid raceId" }, { status: 400 });
   }
 
-  const paceMap = await computePracticePace(raceId);
+  const paceMap = await computeRacePaceProjection(raceId);
   const result = await toRankedPaceRows(raceId, paceMap);
   return Response.json({ raceId, drivers: result });
 }

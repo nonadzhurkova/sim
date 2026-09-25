@@ -9,7 +9,7 @@ import { RaceComparison } from "@/components/race-comparison";
 import { RatingsPanel } from "@/components/ratings-panel";
 import { PredictionStub } from "@/components/prediction-stub";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
-import { PracticePacePanel } from "@/components/practice-pace-panel";
+import { PaceProjectionPanel } from "@/components/pace-projection-panel";
 
 const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
@@ -68,8 +68,21 @@ export default async function RacePage({
       </section>
 
       {hasPracticeData && (
-        <section className="mt-8">
-          <PracticePacePanel raceId={race.id} />
+        <section className="mt-8 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <PaceProjectionPanel
+            raceId={race.id}
+            endpoint="/api/practice-pace"
+            title="Projected Qualifying Pace (from practice so far)"
+            buttonLabel="Calculate Qualifying Pace"
+            emptyMessage="NO DRY PRACTICE LAPS AVAILABLE YET FOR THIS WEEKEND."
+          />
+          <PaceProjectionPanel
+            raceId={race.id}
+            endpoint="/api/race-pace-projection"
+            title="Projected Race Pace (from long runs so far)"
+            buttonLabel="Calculate Race Pace"
+            emptyMessage="NO LONG-RUN STINTS DETECTED YET FOR THIS WEEKEND."
+          />
         </section>
       )}
 
