@@ -1,6 +1,5 @@
 import { db } from "@/db";
-import { races, raceResults } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { raceResults } from "@/db/schema";
 import { weightedAverage } from "./decay";
 
 /**

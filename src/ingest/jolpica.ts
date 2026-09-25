@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { circuits, drivers, teams, races, raceResults, qualifyingResults } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const BASE_URL = "https://api.jolpi.ca/ergast/f1";
 
@@ -211,19 +211,41 @@ async function ingestQualifying(raceId: number, results: ErgastQualifyingResult[
   }
 }
 
+/**
+ * A race is considered fully ingested if it already has both results and
+ * qualifying stored. The latest round in the season is never skipped even
+ * if "complete," since it may have been ingested mid-weekend before final
+ * results were available upstream.
+ */
+async function isRaceFullyIngested(raceId: number): Promise<boolean> {
+  const [[{ resultCount }], [{ qualCount }]] = await Promise.all([
+    db.select({ resultCount: sql<number>`count(*)` }).from(raceResults).where(eq(raceResults.raceId, raceId)),
+    db.select({ qualCount: sql<number>`count(*)` }).from(qualifyingResults).where(eq(qualifyingResults.raceId, raceId)),
+  ]);
+  return Number(resultCount) > 0 && Number(qualCount) > 0;
+}
+
 export async function ingestSeason(season: number) {
   console.log(`[jolpica] fetching season ${season}...`);
   const raceTable = await fetchJson<{
     MRData: { RaceTable: { Races: ErgastRace[] } };
   }>(`${BASE_URL}/${season}.json?limit=100`);
   const raceList = raceTable.MRData.RaceTable.Races;
+  const latestRound = Math.max(...raceList.map((r) => parseInt(r.round, 10)));
 
+  let skipped = 0;
   for (const raceMeta of raceList) {
     const round = raceMeta.round;
-    console.log(`[jolpica] season ${season} round ${round}: ${raceMeta.Circuit.circuitName}`);
 
     const circuitId = await upsertCircuit(raceMeta.Circuit);
     const raceId = await upsertRace(raceMeta, circuitId);
+
+    if (parseInt(round, 10) !== latestRound && (await isRaceFullyIngested(raceId))) {
+      skipped++;
+      continue;
+    }
+
+    console.log(`[jolpica] season ${season} round ${round}: ${raceMeta.Circuit.circuitName}`);
 
     const resultsData = await fetchJson<{
       MRData: { RaceTable: { Races: ErgastRace[] } };
@@ -242,5 +264,5 @@ export async function ingestSeason(season: number) {
     }
   }
 
-  console.log(`[jolpica] season ${season} done (${raceList.length} races)`);
+  console.log(`[jolpica] season ${season} done (${raceList.length} races, ${skipped} already up to date)`);
 }

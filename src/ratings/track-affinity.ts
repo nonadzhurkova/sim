@@ -3,8 +3,6 @@ import { races, circuits } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { weightedAverage } from "./decay";
 
-type CircuitType = "street" | "high_speed" | "technical";
-
 /**
  * Per-driver adjustment for the target race's circuit type: the driver's
  * recency-weighted average field-relative pace on that circuit type, minus

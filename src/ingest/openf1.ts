@@ -37,7 +37,7 @@ type OpenF1Weather = {
   rainfall: number;
 };
 
-const SESSION_TYPE_MAP: Record<string, "fp1" | "fp2" | "fp3" | "q" | "r"> = {
+export const SESSION_TYPE_MAP: Record<string, "fp1" | "fp2" | "fp3" | "q" | "r"> = {
   "Practice 1": "fp1",
   "Practice 2": "fp2",
   "Practice 3": "fp3",
@@ -197,6 +197,20 @@ async function ingestStints(
     });
 }
 
+/**
+ * A session is considered fully ingested if it already has both laps and
+ * stints stored. The most recent race weekend is never skipped even if
+ * "complete," since it may have been ingested mid-session before all laps
+ * were available upstream.
+ */
+async function isSessionFullyIngested(dbSessionId: number): Promise<boolean> {
+  const [[{ lapCount }], [{ stintCount }]] = await Promise.all([
+    db.select({ lapCount: sql<number>`count(*)` }).from(laps).where(eq(laps.sessionId, dbSessionId)),
+    db.select({ stintCount: sql<number>`count(*)` }).from(stints).where(eq(stints.sessionId, dbSessionId)),
+  ]);
+  return Number(lapCount) > 0 && Number(stintCount) > 0;
+}
+
 export async function ingestSeasonSessions(season: number) {
   console.log(`[openf1] fetching sessions for ${season}...`);
   const openf1Sessions = await fetchJson<OpenF1Session[]>(
@@ -208,7 +222,19 @@ export async function ingestSeasonSessions(season: number) {
     .from(races)
     .where(eq(races.season, season));
   const allDrivers = await db.select({ id: drivers.id, name: drivers.name }).from(drivers);
+  const latestRaceId = dbRaces.reduce(
+    (latest, r) => (latest === null || r.round > latest.round ? r : latest),
+    null as { id: number; round: number } | null,
+  )?.id;
 
+  const existingSessions = await db
+    .select({ id: sessions.id, raceId: sessions.raceId, openf1SessionKey: sessions.openf1SessionKey })
+    .from(sessions)
+    .innerJoin(races, eq(sessions.raceId, races.id))
+    .where(eq(races.season, season));
+  const dbSessionByKey = new Map(existingSessions.map((s) => [s.openf1SessionKey, s]));
+
+  let skipped = 0;
   for (const s of openf1Sessions) {
     const sessionType = SESSION_TYPE_MAP[s.session_name];
     if (!sessionType) continue; // skip sprint/testing sessions for now
@@ -221,6 +247,16 @@ export async function ingestSeasonSessions(season: number) {
     });
     if (!matchingRace) {
       console.warn(`[openf1] no matching race for session ${s.session_key} (${s.circuit_short_name} ${sessionDate})`);
+      continue;
+    }
+
+    const existing = dbSessionByKey.get(s.session_key);
+    if (
+      existing &&
+      matchingRace.id !== latestRaceId &&
+      (await isSessionFullyIngested(existing.id))
+    ) {
+      skipped++;
       continue;
     }
 
@@ -239,5 +275,5 @@ export async function ingestSeasonSessions(season: number) {
     await sleep(300); // OpenF1 rate limit is generous but not unlimited
   }
 
-  console.log(`[openf1] season ${season} done`);
+  console.log(`[openf1] season ${season} done (${skipped} sessions already up to date)`);
 }

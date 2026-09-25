@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { races, drivers, teams, raceResults, driverRatings, teamRatings } from "@/db/schema";
+import { races, drivers, teams, driverRatings, teamRatings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { computeRaceFieldRelativePace } from "./race-pace";
 import { weightedAverage } from "./decay";
