@@ -37,6 +37,14 @@ export const PACE_WEIGHTS = {
   racePaceProjection: 1.6,
   carStrength: 0.6,
   trackAffinity: 0.35,
+  /**
+   * Recent qualifying form. Matters most before qualifying has run, which is
+   * when a prediction is actually useful: in that scenario it lifts 2026
+   * top-1 accuracy from 28.6% to 42.9% and cuts 2025 log loss from 2.22 to
+   * 2.10. Kept at 0.6 rather than the sweep's edge, since the two seasons
+   * disagree on how far to push it.
+   */
+  qualiForm: 0.6,
 } as const;
 
 /**
@@ -62,6 +70,15 @@ export const PACE_NOISE_STD_DEV = 0.35;
  * mistake or a yellow flag costs the whole session.
  */
 export const QUALI_NOISE_STD_DEV = 0.28;
+
+/**
+ * How much recent qualifying form (vs general race pace) determines a
+ * simulated starting grid, for a race whose qualifying hasn't happened yet.
+ * One-lap pace is a distinguishable skill from race pace, and the simulated
+ * grid then feeds the grid penalty, which is the model's strongest factor —
+ * so getting the grid right matters as much as getting race pace right.
+ */
+export const QUALI_FORM_BLEND = 0.5;
 
 /**
  * How much a grid position is worth, in effective race pace (seconds/lap),

@@ -11,6 +11,7 @@ import {
 import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
 import { computeRacePaceProjection } from "@/ratings/practice-pace";
+import { computeQualiForm } from "@/ratings/quali-form";
 import {
   PACE_WEIGHTS,
   DEFAULT_DNF_RATE,
@@ -37,7 +38,10 @@ export type SimEntrant = {
     racePaceProjection: boolean;
     carStrength: boolean;
     trackAffinity: boolean;
+    qualiForm: boolean;
   };
+  /** Recent qualifying form, used to seed a simulated grid when qualifying hasn't happened. */
+  qualiForm: number | null;
 };
 
 export type SimContext = {
@@ -173,10 +177,11 @@ export async function buildSimContext(
   const fieldRatings = ratingRows.filter((r) => fieldDriverIds.has(r.driverId));
   if (fieldRatings.length === 0) return null;
 
-  const teamsByDriver = await getDriverTeamsAsOf(
-    raceId,
-    fieldRatings.map((r) => r.driverId),
-  );
+  const fieldDriverIdList = fieldRatings.map((r) => r.driverId);
+  const [teamsByDriver, qualiFormByDriver] = await Promise.all([
+    getDriverTeamsAsOf(raceId, fieldDriverIdList),
+    computeQualiForm(raceId, fieldDriverIdList),
+  ]);
   const carStrengthByTeam = new Map(
     teamRatingRows
       .filter((t) => t.carStrength != null)
@@ -188,6 +193,7 @@ export async function buildSimContext(
     const team = teamsByDriver.get(r.driverId) ?? null;
     const carStrength = team ? carStrengthByTeam.get(team.teamId) ?? null : null;
     const projection = racePaceProjection.get(r.driverId)?.pace ?? null;
+    const qualiForm = qualiFormByDriver.get(r.driverId) ?? null;
 
     const expectedPace = composePace([
       { value: r.basePace, weight: weights.basePace },
@@ -195,6 +201,7 @@ export async function buildSimContext(
       { value: projection, weight: weights.racePaceProjection },
       { value: carStrength, weight: weights.carStrength },
       { value: r.trackAffinity, weight: weights.trackAffinity },
+      { value: qualiForm, weight: weights.qualiForm },
     ]);
     // A driver with no pace signal at all can't be meaningfully simulated;
     // including them at an assumed pace would invent a result from nothing.
@@ -209,12 +216,14 @@ export async function buildSimContext(
       expectedPace,
       dnfRate: Math.min(MAX_DNF_RATE, Math.max(MIN_DNF_RATE, rawDnf)),
       gridPosition: gridByDriver.get(r.driverId) ?? null,
+      qualiForm,
       signals: {
         basePace: r.basePace != null,
         practicePace: r.practicePace != null,
         racePaceProjection: projection != null,
         carStrength: carStrength != null,
         trackAffinity: r.trackAffinity != null,
+        qualiForm: qualiForm != null,
       },
     });
   }

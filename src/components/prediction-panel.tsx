@@ -10,6 +10,7 @@ type SimSignals = {
   racePaceProjection: boolean;
   carStrength: boolean;
   trackAffinity: boolean;
+  qualiForm: boolean;
 };
 
 type DriverOutcome = {
@@ -51,6 +52,7 @@ function SignalDots({ signals }: { signals: SimSignals }) {
     ["racePaceProjection", "Practice long-run pace"],
     ["carStrength", "Car strength"],
     ["trackAffinity", "Track affinity"],
+    ["qualiForm", "Recent qualifying form"],
   ];
   return (
     <span className="flex items-center gap-[3px]">
