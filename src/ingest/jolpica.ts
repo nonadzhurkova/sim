@@ -66,18 +66,6 @@ function qualifyingTimeToSeconds(time?: string): number | null {
   return parseInt(match[1], 10) * 60 + parseFloat(match[2]);
 }
 
-/** DNF cause is a judgment call the raw Ergast status string doesn't cleanly encode. */
-function classifyDnfCause(status: string): "car" | "driver" | "other" {
-  const s = status.toLowerCase();
-  if (s.includes("accident") || s.includes("collision") || s.includes("spun off")) {
-    return "driver";
-  }
-  if (s === "finished" || s.startsWith("+")) {
-    return "other"; // not actually a DNF; caller should check status first
-  }
-  return "car"; // engine, gearbox, hydraulics, electrical, etc.
-}
-
 async function upsertCircuit(c: ErgastCircuit): Promise<number> {
   const existing = await db
     .select({ id: circuits.id })
@@ -147,13 +135,20 @@ async function upsertRace(r: ErgastRace, circuitId: number): Promise<number> {
   return row.id;
 }
 
+/**
+ * Ergast/Jolpica status strings observed: "Finished", "Lapped" (classified
+ * finisher, one or more laps down — NOT a retirement), "+N Lap(s)" (older
+ * API shape, same meaning as "Lapped"), "Retired", "Disqualified", "Did not
+ * start". Only "Retired" is a true DNF; the API gives no specific cause
+ * (engine vs accident) so dnf_cause is left null rather than guessed.
+ */
 async function ingestRaceResults(raceId: number, results: ErgastRaceResult[]) {
   for (const result of results) {
     const driverId = await upsertDriver(result.Driver);
     const teamId = await upsertTeam(result.Constructor);
-    const finished = result.status === "Finished" || result.status.startsWith("+");
+    const finished =
+      result.status === "Finished" || result.status === "Lapped" || result.status.startsWith("+");
     const status = finished ? "finished" : result.status === "Disqualified" ? "dsq" : "dnf";
-    const dnfCause = status === "dnf" ? classifyDnfCause(result.status) : null;
 
     await db
       .insert(raceResults)
@@ -164,7 +159,7 @@ async function ingestRaceResults(raceId: number, results: ErgastRaceResult[]) {
         gridPosition: parseInt(result.grid, 10) || null,
         finishPosition: parseInt(result.position, 10) || null,
         status,
-        dnfCause,
+        dnfCause: null,
       })
       .onConflictDoUpdate({
         target: [raceResults.raceId, raceResults.driverId],
@@ -173,7 +168,7 @@ async function ingestRaceResults(raceId: number, results: ErgastRaceResult[]) {
           gridPosition: parseInt(result.grid, 10) || null,
           finishPosition: parseInt(result.position, 10) || null,
           status,
-          dnfCause,
+          dnfCause: null,
         },
       });
   }
