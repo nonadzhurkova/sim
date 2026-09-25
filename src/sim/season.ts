@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { races, raceResults } from "@/db/schema";
-import { eq, and, gt, asc } from "drizzle-orm";
+import { races, raceResults, circuits } from "@/db/schema";
+import { eq, and, gt, asc, inArray } from "drizzle-orm";
 import { buildSimContext, type SimContext } from "./entrants";
 import { createRng, sampleNormal, sampleBernoulli } from "./random";
 import { getStandings } from "@/queries/standings";
@@ -54,6 +54,21 @@ export type TitleOdds = {
 /** Positions tracked individually before being grouped as "outside". */
 export const TRACKED_POSITIONS = 6;
 
+/** The most likely outcome of one still-to-run race, for the summary list. */
+export type RaceOutlook = {
+  raceId: number;
+  round: number;
+  circuitName: string;
+  /** Most likely race winner and their win probability in that one race. */
+  favouriteDriverId: number;
+  favouriteDriverName: string;
+  favouriteWinPct: number;
+  /** Team projected to score the most points at this round. */
+  favouriteTeamId: number;
+  favouriteTeamName: string;
+  favouriteTeamPct: number;
+};
+
 export type SeasonProjection = {
   season: number;
   iterations: number;
@@ -61,6 +76,8 @@ export type SeasonProjection = {
   roundsScored: number;
   drivers: TitleOdds[];
   teams: TitleOdds[];
+  /** Per-race favourite, in round order — the "who wins where" summary. */
+  raceOutlooks: RaceOutlook[];
   /** True when the season is over and these are just the final standings. */
   complete: boolean;
 };
@@ -172,6 +189,7 @@ export async function* streamSeasonProjection(
     season,
     iterations: 0,
     racesRemaining: 0,
+    raceOutlooks: [],
     roundsScored: standings.roundsScored,
     complete: false,
     drivers: standings.drivers.map((d) => ({
@@ -222,6 +240,18 @@ export async function* streamSeasonProjection(
     if (existing.length === 0) pendingRaceIds.push(race.id);
   }
 
+  // Circuit names for the per-race outlook summary, fetched once rather than
+  // per simulated race.
+  const raceMeta = new Map<number, { round: number; circuitName: string }>();
+  if (pendingRaceIds.length > 0) {
+    const rows = await db
+      .select({ id: races.id, round: races.round, circuitName: circuits.name })
+      .from(races)
+      .innerJoin(circuits, eq(races.circuitId, circuits.id))
+      .where(inArray(races.id, pendingRaceIds));
+    for (const r of rows) raceMeta.set(r.id, { round: r.round, circuitName: r.circuitName });
+  }
+
   const driverMeta = new Map(
     standings.drivers.map((d) => [
       d.driverId,
@@ -249,6 +279,7 @@ export async function* streamSeasonProjection(
       season,
       iterations: 0,
       racesRemaining: 0,
+      raceOutlooks: [],
       roundsScored: standings.roundsScored,
       complete: true,
       drivers: standings.drivers.map((d) => ({
@@ -295,6 +326,13 @@ export async function* streamSeasonProjection(
   const dPositionHits = new Map(driverIds.map((id) => [id, new Array(TRACKED_POSITIONS).fill(0)]));
   const tPositionHits = new Map(teamIds.map((id) => [id, new Array(TRACKED_POSITIONS).fill(0)]));
 
+  // Per-race tallies, keyed by raceId, for the "who wins where" summary: how
+  // many simulated seasons had this driver win this specific race, and how
+  // many points each team scored at it (for "most points on track" rather
+  // than requiring an outright win).
+  const raceWinnerHits = new Map<number, Map<number, number>>();
+  const raceTeamPoints = new Map<number, Map<number, number>>();
+
   const rng = createRng(season * 1000 + standings.roundsScored);
   const scratch = {
     pace: new Array<number>(30),
@@ -323,6 +361,8 @@ export async function* streamSeasonProjection(
       tPosition.set(id, 0);
       tPositionHits.set(id, new Array(TRACKED_POSITIONS).fill(0));
     }
+    raceWinnerHits.clear();
+    raceTeamPoints.clear();
   };
 
   // Load the first race, then start simulating immediately and fold in each
@@ -359,6 +399,14 @@ export async function* streamSeasonProjection(
     // One whole season per iteration, so results stay correlated across races.
     for (const ctx of remaining) {
       const { order, retired } = simulateRaceOrder(ctx, rng, scratch);
+
+      if (!raceWinnerHits.has(ctx.raceId)) {
+        raceWinnerHits.set(ctx.raceId, new Map());
+        raceTeamPoints.set(ctx.raceId, new Map());
+      }
+      const winnerHits = raceWinnerHits.get(ctx.raceId)!;
+      const teamPointsAtRace = raceTeamPoints.get(ctx.raceId)!;
+
       let scoring = 0;
       for (let pos = 0; pos < order.length; pos++) {
         const i = order[pos];
@@ -369,7 +417,11 @@ export async function* streamSeasonProjection(
         const driverId = ctx.entrants[i].driverId;
         seasonDriver.set(driverId, (seasonDriver.get(driverId) ?? 0) + points);
         const teamId = ctx.entrants[i].teamId ?? teamByDriver.get(driverId);
-        if (teamId != null) seasonTeam.set(teamId, (seasonTeam.get(teamId) ?? 0) + points);
+        if (teamId != null) {
+          seasonTeam.set(teamId, (seasonTeam.get(teamId) ?? 0) + points);
+          teamPointsAtRace.set(teamId, (teamPointsAtRace.get(teamId) ?? 0) + points);
+        }
+        if (scoring === 1) winnerHits.set(driverId, (winnerHits.get(driverId) ?? 0) + 1);
       }
     }
 
@@ -465,6 +517,50 @@ export async function* streamSeasonProjection(
       })
       .sort((a, b) => b.titlePct - a.titlePct || b.projectedPoints - a.projectedPoints);
 
+    // Per-race favourite: the driver who won most often, and the team that
+    // scored the most points most often, in that one race across all
+    // simulated seasons — the "who's predicted to win where" summary.
+    const raceOutlooks: RaceOutlook[] = remaining
+      .map((ctx): RaceOutlook | null => {
+        const meta = raceMeta.get(ctx.raceId);
+        if (!meta) return null;
+        const winnerHits = raceWinnerHits.get(ctx.raceId);
+        const teamPointsAtRace = raceTeamPoints.get(ctx.raceId);
+        if (!winnerHits || winnerHits.size === 0) return null;
+
+        const [favDriverId, favDriverHits] = [...winnerHits.entries()].sort(
+          (a, b) => b[1] - a[1],
+        )[0];
+        const favDriverMeta = driverMeta.get(favDriverId);
+
+        let favTeamId = -1;
+        let favTeamPoints = 0;
+        for (const [teamId, pts] of teamPointsAtRace ?? []) {
+          if (pts > favTeamPoints) {
+            favTeamId = teamId;
+            favTeamPoints = pts;
+          }
+        }
+        const totalTeamPoints = [...(teamPointsAtRace?.values() ?? [])].reduce(
+          (a, b) => a + b,
+          0,
+        );
+
+        return {
+          raceId: ctx.raceId,
+          round: meta.round,
+          circuitName: meta.circuitName,
+          favouriteDriverId: favDriverId,
+          favouriteDriverName: favDriverMeta?.name ?? "Unknown",
+          favouriteWinPct: favDriverHits / safe,
+          favouriteTeamId: favTeamId,
+          favouriteTeamName: teamMeta.get(favTeamId)?.name ?? "Unknown",
+          favouriteTeamPct: totalTeamPoints > 0 ? favTeamPoints / totalTeamPoints : 0,
+        };
+      })
+      .filter((o): o is RaceOutlook => o != null)
+      .sort((a, b) => a.round - b.round);
+
     return {
       season,
       iterations: done,
@@ -475,6 +571,7 @@ export async function* streamSeasonProjection(
       complete: false,
       drivers: driverOdds,
       teams: teamOdds,
+      raceOutlooks,
     };
   }
 }

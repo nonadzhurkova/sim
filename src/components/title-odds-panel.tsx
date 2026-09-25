@@ -118,6 +118,86 @@ function OddsRow({
   );
 }
 
+/**
+ * Plain-language "who's predicted to win where" summary, built from the
+ * per-race favourite each round rather than only season-long totals — the
+ * points table says who leads the championship, this says what's expected
+ * to actually happen at each remaining race.
+ *
+ * Only shown once the run has actually finished (state === "done"): the
+ * per-race win percentages are the noisiest numbers in the whole projection
+ * (they come from far fewer effective samples than the season totals, since
+ * each race's outcome is one event per simulated season rather than an
+ * accumulation), so showing them mid-stream would be the most misleading
+ * place to display an unconverged number.
+ */
+function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
+  if (projection.raceOutlooks.length === 0) return null;
+
+  // When the same driver tops every remaining race, that is the model
+  // reporting a real gap in its base-pace rating, not track-by-track
+  // variation — none of these races have a real grid yet, so each one is
+  // seeded from the same season-long pace number, and track-specific form
+  // (trackAffinity) is deliberately weighted low because pushing it higher
+  // measurably hurt the rest of the field's predicted order in backtesting
+  // (see params.ts). Worth saying plainly rather than let the repetition
+  // look like a bug.
+  const distinctFavourites = new Set(projection.raceOutlooks.map((o) => o.favouriteDriverId));
+  const oneNameDominates = distinctFavourites.size === 1 && projection.raceOutlooks.length > 2;
+
+  return (
+    <HudPanel title="Race-by-Race Predictions">
+      {oneNameDominates && (
+        <p className="hud-mono mb-3 text-[10px] leading-relaxed text-amber-400">
+          ⚠ SAME FAVOURITE AT EVERY REMAINING RACE: NONE HAVE A REAL GRID YET, SO EACH IS
+          SEEDED FROM THE SAME SEASON-LONG PACE RATING RATHER THAN TRACK-SPECIFIC FORM. THIS
+          WILL SHARPEN AND DIVERGE ONCE REAL QUALIFYING RESULTS COME IN FOR EACH WEEKEND.
+        </p>
+      )}
+      <div className="flex flex-col gap-1.5">
+        {projection.raceOutlooks.map((o) => {
+          const driverColor = getTeamColor(
+            projection.drivers.find((d) => d.id === o.favouriteDriverId)?.teamName ?? null,
+          );
+          const teamColor = getTeamColor(o.favouriteTeamName);
+          return (
+            <div
+              key={o.raceId}
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-800/50 py-1.5 text-sm"
+            >
+              <span className="hud-mono w-9 shrink-0 text-[10px] text-slate-600">
+                R{o.round}
+              </span>
+              <span className="w-40 shrink-0 truncate text-slate-300">{o.circuitName}</span>
+              <span className="text-slate-500">—</span>
+              <span className="font-semibold" style={{ color: driverColor }}>
+                {o.favouriteDriverName}
+              </span>
+              <span className="text-slate-500">favoured to win</span>
+              <span className="hud-mono text-[11px] text-cyan-300">
+                ({pct(o.favouriteWinPct)}%)
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="font-semibold" style={{ color: teamColor }}>
+                {o.favouriteTeamName}
+              </span>
+              <span className="text-slate-500">projected top team</span>
+              <span className="hud-mono text-[11px] text-cyan-300">
+                ({pct(o.favouriteTeamPct)}%)
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="hud-mono mt-3 text-[9px] text-slate-600">
+        &quot;PROJECTED TOP TEAM&quot; IS THE SHARE OF THAT RACE&apos;S POINTS THE TEAM IS
+        EXPECTED TO SCORE, NOT A WIN PROBABILITY — A TEAM CAN LEAD ON POINTS WITH BOTH CARS
+        SCORING WITHOUT EITHER ONE WINNING.
+      </p>
+    </HudPanel>
+  );
+}
+
 export function TitleOddsPanel({ season }: { season: number }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [projection, setProjection] = useState<SeasonProjection | null>(null);
@@ -255,6 +335,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
   // driver's row lined up against an unrelated constructor's row looked like
   // that driver raced for that team.
   return (
+    <div className="flex flex-col gap-4">
     <HudPanel
       title={`${projection.season} Championship Prediction — ${projection.racesRemaining} races left`}
     >
@@ -319,5 +400,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
         </Link>
       </div>
     </HudPanel>
+    {state === "done" && <RaceOutlookSummary projection={projection} />}
+    </div>
   );
 }
