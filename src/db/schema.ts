@@ -44,6 +44,11 @@ export const drivers = pgTable(
     name: text("name").notNull(),
     nationality: text("nationality"),
     dateOfBirth: date("date_of_birth"),
+    // From OpenF1's drivers endpoint. Stored rather than fetched per request:
+    // both change at most once a season, so a lookup every page load would be
+    // repeated calls to a rate-limited API for data that never moves.
+    driverNumber: integer("driver_number"),
+    headshotUrl: text("headshot_url"),
   },
   (t) => [unique().on(t.externalRef)],
 );

@@ -5,6 +5,7 @@ import { ingestSeason } from "@/ingest/jolpica";
 import { ingestSeasonSessions } from "@/ingest/openf1";
 import { computeSeasonRatings } from "@/ratings/compute";
 import type { IngestProgress } from "@/ingest/progress";
+import { syncDriverMedia } from "@/queries/driver-media";
 
 async function countsForSeason(season: number) {
   const [{ raceCount }] = await db
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
       const before = await countsForSeason(season);
       await ingestSeason(season);
       await ingestSeasonSessions(season);
+      await syncDriverMedia(season);
       await computeSeasonRatings(season);
       const after = await countsForSeason(season);
       return Response.json({ season, before, after });
@@ -75,6 +77,14 @@ export async function POST(req: Request) {
 
         send({ type: "phase", phase: "openf1", label: "Timing, laps & stints" });
         await ingestSeasonSessions(season, report("openf1"));
+
+        send({ type: "phase", phase: "openf1", label: "Driver photos & numbers" });
+        const mediaUpdated = await syncDriverMedia(season);
+        send({
+          type: "progress",
+          phase: "openf1",
+          message: `${mediaUpdated} driver photo${mediaUpdated === 1 ? "" : "s"} updated`,
+        });
 
         send({ type: "phase", phase: "ratings", label: "Recomputing ratings" });
         await computeSeasonRatings(season, report("ratings"));

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useState } from "react";
 import type { DriverSessionPace } from "@/queries/session-pace";
@@ -62,12 +63,15 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
                       dropping the Time column loses nothing recoverable. */}
                   <span className="flex items-center gap-2">
                     <TeamBadge teamName={r.teamName} size={14} />
-                    <span
-                      className={isLeader ? "font-semibold text-cyan-300" : "text-slate-200"}
+                    <Link
+                      href={`/driver/${r.driverId}`}
+                      className={`hover:underline ${
+                        isLeader ? "font-semibold text-cyan-300" : "text-slate-200"
+                      }`}
                       title={`${r.driverName} · ${r.teamName ?? "Unknown team"} · ${formatLapTime(r.bestLap)}`}
                     >
                       {driverCode(r.driverName)}
-                    </span>
+                    </Link>
                   </span>
                 </td>
                 <td
