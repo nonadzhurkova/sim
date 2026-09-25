@@ -3,11 +3,21 @@ import { laps, sessions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
 /**
+ * Below this many clean laps, a driver's "median" is just an average of a
+ * couple of laps and can be dominated by a single bad one — a crash-damaged
+ * limp back to the pits, or a lap caught by a broken timing record. Found via
+ * a real case: a driver with 2 recorded laps (97.5s, 154.3s — the second
+ * clearly not representative pace) produced a field-relative gap of +47s,
+ * which is physically meaningless and would corrupt any rating built from it.
+ */
+const MIN_CLEAN_LAPS_FOR_SIGNAL = 4;
+
+/**
  * Field-relative race pace per driver for one race: each driver's median
  * clean lap time minus the field's median clean lap time. Negative = faster
  * than the field. Normalizes across circuits/conditions so paces are
  * comparable race-to-race. Returns null for a driver if they have no clean
- * laps (e.g. DNF on lap 1).
+ * laps (e.g. DNF on lap 1), or too few to produce a meaningful median.
  */
 export async function computeRaceFieldRelativePace(
   raceId: number,
@@ -38,6 +48,7 @@ export async function computeRaceFieldRelativePace(
 
   const driverMedians = new Map<number, number>();
   for (const [driverId, durations] of byDriver) {
+    if (durations.length < MIN_CLEAN_LAPS_FOR_SIGNAL) continue;
     driverMedians.set(driverId, median(durations));
   }
   if (driverMedians.size === 0) return new Map();
