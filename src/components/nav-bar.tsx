@@ -2,13 +2,13 @@ import Link from "next/link";
 
 export function NavBar() {
   return (
-    <header className="border-b border-gray-200">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-        <Link href="/" className="font-bold text-gray-900">
-          F1 Predictor
+    <header className="border-b border-cyan-900/60 bg-[#05070a]/90 backdrop-blur">
+      <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-3 lg:px-10">
+        <Link href="/" className="hud-mono text-sm font-bold tracking-widest text-cyan-400">
+          F1// PREDICTOR
         </Link>
-        <nav className="flex gap-4 text-sm text-gray-600">
-          <Link href="/" className="hover:text-gray-900">
+        <nav className="flex gap-4 text-xs uppercase tracking-wider text-slate-400">
+          <Link href="/" className="hover:text-cyan-300">
             Home
           </Link>
         </nav>

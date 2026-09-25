@@ -6,7 +6,10 @@ import { RaceHeader } from "@/components/race-header";
 import { ImportButton } from "@/components/import-button";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
+import { RatingsPanel } from "@/components/ratings-panel";
 import { PredictionStub } from "@/components/prediction-stub";
+import { FastestLapBanner } from "@/components/fastest-lap-banner";
+import { PracticePacePanel } from "@/components/practice-pace-panel";
 
 const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
@@ -35,29 +38,55 @@ export default async function RacePage({
 
   const hasRaceResult = sessionPace.r != null && sessionPace.r.length > 0;
   const raceHasHappened = new Date(race.date) <= new Date();
+  const hasPracticeData = sessionPace.fp1 != null || sessionPace.fp2 != null || sessionPace.fp3 != null;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
       <div className="flex items-center justify-between gap-4">
         <RaceHeader race={race} />
         <ImportButton season={season} />
       </div>
 
+      <div className="mt-6">
+        <FastestLapBanner sessionPace={sessionPace} comparison={comparison} />
+      </div>
+
       <section className="mt-8">
-        <h2 className="text-lg font-bold">This weekend</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+          {"//"} This weekend
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {Object.entries(sessionPace).map(([type, rows]) => (
             <SessionPaceTable key={type} title={SESSION_LABELS[type] ?? type} rows={rows} />
           ))}
           {Object.keys(sessionPace).length === 0 && (
-            <p className="text-sm text-gray-400">No session data yet for this race weekend.</p>
+            <p className="hud-mono text-xs text-slate-500">
+              NO SESSION DATA YET FOR THIS RACE WEEKEND.
+            </p>
           )}
         </div>
       </section>
 
+      {hasPracticeData && (
+        <section className="mt-8">
+          <PracticePacePanel raceId={race.id} />
+        </section>
+      )}
+
       {!raceHasHappened && !hasRaceResult && (
         <section className="mt-8">
           <PredictionStub />
+        </section>
+      )}
+
+      {comparison && (
+        <section className="mt-8">
+          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+            {"//"} Ratings
+          </p>
+          <div className="mt-4">
+            <RatingsPanel snapshot={comparison.thisYear} />
+          </div>
         </section>
       )}
 

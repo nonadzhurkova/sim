@@ -41,21 +41,21 @@ export function ImportButton({ season }: { season: number }) {
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col items-end gap-1">
       <button
         onClick={handleClick}
         disabled={state === "loading"}
-        className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="hud-mono relative border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {state === "loading" ? "Importing..." : "Import latest data"}
+        {state === "loading" ? "Importing..." : "Import Latest Data"}
       </button>
       {state === "done" && summary && (
-        <p className="text-xs text-gray-500">
-          Races: {summary.before.races} → {summary.after.races}, Sessions:{" "}
-          {summary.before.sessions} → {summary.after.sessions}
+        <p className="hud-mono text-[11px] text-slate-500">
+          Races {summary.before.races}→{summary.after.races} · Sessions{" "}
+          {summary.before.sessions}→{summary.after.sessions}
         </p>
       )}
-      {state === "error" && <p className="text-xs text-red-600">{error}</p>}
+      {state === "error" && <p className="hud-mono text-[11px] text-red-400">{error}</p>}
     </div>
   );
 }

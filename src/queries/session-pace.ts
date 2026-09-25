@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { sessions, laps, drivers, raceResults, qualifyingResults, teams } from "@/db/schema";
+import { sessions, laps, drivers } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { getDriverTeamsAsOf } from "./driver-teams";
 
 export type SessionType = "fp1" | "fp2" | "fp3" | "q" | "r";
 
@@ -47,25 +48,12 @@ export async function getSessionPaceRanking(
   if (bestByDriver.size === 0) return [];
 
   const driverIds = [...bestByDriver.keys()];
-  const [driverRows, raceResultTeamRows, qualifyingTeamRows] = await Promise.all([
+  const [driverRows, teamByDriverId] = await Promise.all([
     db.select({ id: drivers.id, name: drivers.name }).from(drivers).where(inArray(drivers.id, driverIds)),
-    db
-      .select({ driverId: raceResults.driverId, teamId: raceResults.teamId, teamName: teams.name })
-      .from(raceResults)
-      .innerJoin(teams, eq(raceResults.teamId, teams.id))
-      .where(and(eq(raceResults.raceId, raceId), inArray(raceResults.driverId, driverIds))),
-    // fallback for FP sessions on a race that hasn't finished yet (no raceResults rows)
-    db
-      .select({ driverId: qualifyingResults.driverId, teamId: qualifyingResults.teamId, teamName: teams.name })
-      .from(qualifyingResults)
-      .innerJoin(teams, eq(qualifyingResults.teamId, teams.id))
-      .where(and(eq(qualifyingResults.raceId, raceId), inArray(qualifyingResults.driverId, driverIds))),
+    getDriverTeamsAsOf(raceId, driverIds),
   ]);
 
   const driverNameById = new Map(driverRows.map((d) => [d.id, d.name]));
-  const teamByDriverId = new Map<number, { teamId: number; teamName: string }>();
-  for (const t of qualifyingTeamRows) teamByDriverId.set(t.driverId, { teamId: t.teamId, teamName: t.teamName });
-  for (const t of raceResultTeamRows) teamByDriverId.set(t.driverId, { teamId: t.teamId, teamName: t.teamName });
 
   const fastest = Math.min(...bestByDriver.values());
 
@@ -85,10 +73,15 @@ export async function getSessionPaceRanking(
   return ranked;
 }
 
+// Most relevant/recent first: race, then qualifying, then practice in reverse order.
+const SESSION_DISPLAY_ORDER: SessionType[] = ["r", "q", "fp3", "fp2", "fp1"];
+
 /**
  * Convenience wrapper: computes session pace only for sessions that
  * actually exist for this race, so a mid-weekend race (e.g. only FP1 run)
  * doesn't trigger pointless queries for sessions that haven't happened.
+ * Returned in SESSION_DISPLAY_ORDER (most relevant/recent first) regardless
+ * of underlying storage order.
  */
 export async function getAllSessionPaceForRace(
   raceId: number,
@@ -97,9 +90,11 @@ export async function getAllSessionPaceForRace(
     .select({ sessionType: sessions.sessionType })
     .from(sessions)
     .where(eq(sessions.raceId, raceId));
+  const existingTypes = new Set(existingSessions.map((s) => s.sessionType));
 
   const result: Partial<Record<SessionType, DriverSessionPace[]>> = {};
-  for (const { sessionType } of existingSessions) {
+  for (const sessionType of SESSION_DISPLAY_ORDER) {
+    if (!existingTypes.has(sessionType)) continue;
     result[sessionType] = await getSessionPaceRanking(raceId, sessionType);
   }
   return result;
