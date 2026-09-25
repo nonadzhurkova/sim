@@ -16,6 +16,7 @@ export type StoredSimulation = {
   startedAt: Date | null;
   completedAt: Date | null;
   hasRealGrid: boolean;
+  gridIsProvisional: boolean;
   drivers: SimulationOutcome["drivers"];
 };
 
@@ -78,6 +79,7 @@ export async function runAndStoreSimulation(
       startedAt: new Date(),
       completedAt: new Date(),
       hasRealGrid: outcome.hasRealGrid,
+      gridIsProvisional: outcome.gridIsProvisional,
       drivers: outcome.drivers,
     };
   } catch (err) {
@@ -166,6 +168,7 @@ export async function* streamSimulation(
         startedAt,
         completedAt,
         hasRealGrid: outcome.hasRealGrid,
+        gridIsProvisional: outcome.gridIsProvisional,
         drivers: outcome.drivers,
       },
     };

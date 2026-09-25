@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import type { ProgressReporter } from "./progress";
 import { races, sessions, drivers, laps, stints } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
@@ -211,8 +212,9 @@ async function isSessionFullyIngested(dbSessionId: number): Promise<boolean> {
   return Number(lapCount) > 0 && Number(stintCount) > 0;
 }
 
-export async function ingestSeasonSessions(season: number) {
+export async function ingestSeasonSessions(season: number, onProgress?: ProgressReporter) {
   console.log(`[openf1] fetching sessions for ${season}...`);
+  onProgress?.({ phase: "openf1", message: `Fetching ${season} session list` });
   const openf1Sessions = await fetchJson<OpenF1Session[]>(
     `${BASE_URL}/sessions?year=${season}`,
   );
@@ -234,7 +236,9 @@ export async function ingestSeasonSessions(season: number) {
     .where(eq(races.season, season));
   const dbSessionByKey = new Map(existingSessions.map((s) => [s.openf1SessionKey, s]));
 
+  const relevantSessions = openf1Sessions.filter((s) => SESSION_TYPE_MAP[s.session_name]);
   let skipped = 0;
+  let processed = 0;
   for (const s of openf1Sessions) {
     const sessionType = SESSION_TYPE_MAP[s.session_name];
     if (!sessionType) continue; // skip sprint/testing sessions for now
@@ -257,10 +261,24 @@ export async function ingestSeasonSessions(season: number) {
       (await isSessionFullyIngested(existing.id))
     ) {
       skipped++;
+      processed++;
+      onProgress?.({
+        phase: "openf1",
+        message: `${s.circuit_short_name} ${s.session_name} already up to date`,
+        completed: processed,
+        total: relevantSessions.length,
+      });
       continue;
     }
 
     console.log(`[openf1] ${s.circuit_short_name} ${s.session_name} (session_key=${s.session_key})`);
+    processed++;
+    onProgress?.({
+      phase: "openf1",
+      message: `${s.circuit_short_name} ${s.session_name} — importing laps`,
+      completed: processed,
+      total: relevantSessions.length,
+    });
 
     try {
       const weather = await ingestSessionWeather(s.session_key);

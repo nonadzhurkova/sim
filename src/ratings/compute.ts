@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import type { ProgressReporter } from "@/ingest/progress";
 import { races, drivers, teams, driverRatings, teamRatings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { computeRaceFieldRelativePace } from "./race-pace";
@@ -14,7 +15,7 @@ import { qualifyingResults } from "@/db/schema";
  * `season`, in chronological order, using only data strictly before each
  * race (no lookahead — required for valid backtesting later).
  */
-export async function computeSeasonRatings(season: number) {
+export async function computeSeasonRatings(season: number, onProgress?: ProgressReporter) {
   const seasonRaces = await db
     .select({ id: races.id, season: races.season, round: races.round })
     .from(races)
@@ -131,5 +132,11 @@ export async function computeSeasonRatings(season: number) {
     }
 
     console.log(`[ratings] season ${season} round ${targetRace.round}: ${driverRatingRows.length} driver ratings, ${teamRatingRows.length} team ratings`);
+    onProgress?.({
+      phase: "ratings",
+      message: `Round ${targetRace.round} — ${driverRatingRows.length} driver, ${teamRatingRows.length} team ratings`,
+      completed: seasonRaces.indexOf(targetRace) + 1,
+      total: seasonRaces.length,
+    });
   }
 }

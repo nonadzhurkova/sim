@@ -7,6 +7,8 @@ import {
   teamRatings,
   qualifyingResults,
   raceResults,
+  sessions,
+  laps,
 } from "@/db/schema";
 import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
@@ -51,6 +53,12 @@ export type SimContext = {
   circuitType: string | null;
   /** True when the grid comes from real qualifying rather than being simulated. */
   hasRealGrid: boolean;
+  /**
+   * True when the grid was reconstructed from qualifying lap times because
+   * the classified results aren't published yet. Accurate as an order, but it
+   * cannot know about grid penalties or pit-lane starts.
+   */
+  gridIsProvisional: boolean;
   entrants: SimEntrant[];
 };
 
@@ -151,8 +159,26 @@ export async function buildSimContext(
   const qualiByDriver = new Map(
     qualiRows.filter((q) => q.position != null).map((q) => [q.driverId, q.position as number]),
   );
-  const gridByDriver = realGridByDriver.size > 0 ? realGridByDriver : qualiByDriver;
+  // Third fallback: derive the order from the qualifying session's own lap
+  // times. OpenF1 publishes timing within minutes of a session ending, while
+  // Jolpica's classified results can lag by hours — so between the two there
+  // is a window where qualifying has demonstrably happened but the grid table
+  // is still empty. Simulating a grid in that window throws away the single
+  // strongest predictor available, so the lap times are used instead.
+  let derivedGrid = new Map<number, number>();
+  if (realGridByDriver.size === 0 && qualiByDriver.size === 0) {
+    derivedGrid = await deriveGridFromQualifyingLaps(raceId);
+  }
+
+  const gridByDriver =
+    realGridByDriver.size > 0
+      ? realGridByDriver
+      : qualiByDriver.size > 0
+        ? qualiByDriver
+        : derivedGrid;
   const hasRealGrid = gridByDriver.size > 0;
+  const gridIsProvisional =
+    realGridByDriver.size === 0 && qualiByDriver.size === 0 && derivedGrid.size > 0;
 
   let fieldDriverIds: Set<number>;
   if (hasRealGrid) {
@@ -236,8 +262,49 @@ export async function buildSimContext(
     round: race.round,
     circuitType: race.circuitType,
     hasRealGrid,
+    gridIsProvisional,
     entrants,
   };
+}
+
+/**
+ * Reconstructs qualifying order from the Q session's lap times: each driver's
+ * fastest clean lap, ranked. Implausibly quick laps (broken timing records,
+ * which do occur in the ingested data) are discarded against the session
+ * median before ranking, the same guard the session-pace tables use.
+ */
+async function deriveGridFromQualifyingLaps(raceId: number): Promise<Map<number, number>> {
+  const [qSession] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.raceId, raceId), eq(sessions.sessionType, "q")));
+  if (!qSession) return new Map();
+
+  const qLaps = await db
+    .select({ driverId: laps.driverId, lapDuration: laps.lapDuration })
+    .from(laps)
+    .where(and(eq(laps.sessionId, qSession.id), eq(laps.isPitInOut, false)));
+
+  const durations = qLaps
+    .map((l) => l.lapDuration)
+    .filter((d): d is number => d != null);
+  if (durations.length === 0) return new Map();
+  const sorted = [...durations].sort((a, b) => a - b);
+  const sessionMedian = sorted[Math.floor(sorted.length / 2)];
+  const minPlausible = sessionMedian * 0.8;
+
+  const bestByDriver = new Map<number, number>();
+  for (const lap of qLaps) {
+    if (lap.lapDuration == null || lap.lapDuration < minPlausible) continue;
+    const current = bestByDriver.get(lap.driverId);
+    if (current == null || lap.lapDuration < current) bestByDriver.set(lap.driverId, lap.lapDuration);
+  }
+
+  return new Map(
+    [...bestByDriver.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([driverId], i) => [driverId, i + 1]),
+  );
 }
 
 /**

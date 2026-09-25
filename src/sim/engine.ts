@@ -35,6 +35,8 @@ export type SimulationOutcome = {
   raceId: number;
   iterations: number;
   hasRealGrid: boolean;
+  /** Grid reconstructed from qualifying lap times, results not yet published. */
+  gridIsProvisional: boolean;
   drivers: DriverOutcome[];
 };
 
@@ -281,6 +283,7 @@ function buildOutcome(
     raceId: ctx.raceId,
     iterations: completed,
     hasRealGrid: ctx.hasRealGrid,
+    gridIsProvisional: ctx.gridIsProvisional,
     drivers,
   };
 }

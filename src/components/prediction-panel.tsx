@@ -32,6 +32,7 @@ type SimResult = {
   runId: number;
   iterations: number;
   hasRealGrid: boolean;
+  gridIsProvisional: boolean;
   drivers: DriverOutcome[];
 };
 
@@ -211,10 +212,14 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           {result && state === "done" ? (
             <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-500">
               {result.iterations.toLocaleString()} iterations ·{" "}
-              {result.hasRealGrid ? (
-                <span className="text-cyan-500">grid from real qualifying</span>
-              ) : (
+              {!result.hasRealGrid ? (
                 <span className="text-amber-400">grid simulated (no qualifying yet)</span>
+              ) : result.gridIsProvisional ? (
+                <span className="text-cyan-500">
+                  grid from qualifying lap times (classified results pending — excludes penalties)
+                </span>
+              ) : (
+                <span className="text-cyan-500">grid from real qualifying</span>
               )}
             </p>
           ) : (

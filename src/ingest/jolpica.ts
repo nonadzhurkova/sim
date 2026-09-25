@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import type { ProgressReporter } from "./progress";
 import { circuits, drivers, teams, races, raceResults, qualifyingResults } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
@@ -225,8 +226,9 @@ async function isRaceFullyIngested(raceId: number): Promise<boolean> {
   return Number(resultCount) > 0 && Number(qualCount) > 0;
 }
 
-export async function ingestSeason(season: number) {
+export async function ingestSeason(season: number, onProgress?: ProgressReporter) {
   console.log(`[jolpica] fetching season ${season}...`);
+  onProgress?.({ phase: "jolpica", message: `Fetching ${season} calendar` });
   const raceTable = await fetchJson<{
     MRData: { RaceTable: { Races: ErgastRace[] } };
   }>(`${BASE_URL}/${season}.json?limit=100`);
@@ -234,6 +236,7 @@ export async function ingestSeason(season: number) {
   const latestRound = Math.max(...raceList.map((r) => parseInt(r.round, 10)));
 
   let skipped = 0;
+  let processed = 0;
   for (const raceMeta of raceList) {
     const round = raceMeta.round;
 
@@ -242,10 +245,24 @@ export async function ingestSeason(season: number) {
 
     if (parseInt(round, 10) !== latestRound && (await isRaceFullyIngested(raceId))) {
       skipped++;
+      processed++;
+      onProgress?.({
+        phase: "jolpica",
+        message: `Round ${round} already up to date`,
+        completed: processed,
+        total: raceList.length,
+      });
       continue;
     }
 
     console.log(`[jolpica] season ${season} round ${round}: ${raceMeta.Circuit.circuitName}`);
+    processed++;
+    onProgress?.({
+      phase: "jolpica",
+      message: `Round ${round} — ${raceMeta.Circuit.circuitName}`,
+      completed: processed,
+      total: raceList.length,
+    });
 
     const resultsData = await fetchJson<{
       MRData: { RaceTable: { Races: ErgastRace[] } };
