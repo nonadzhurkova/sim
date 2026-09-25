@@ -9,8 +9,14 @@ type PaceRow = {
   driverName: string;
   teamName: string | null;
   relativePace: number;
+  sampleSize: number | null;
   rank: number;
 };
+
+const LOW_CONFIDENCE_SAMPLE_SIZE = 3; // fewer drivers than this sharing a compound baseline = unreliable gap
+const LOW_FIELD_COVERAGE_THRESHOLD = 8; // fewer than this many drivers with any data at all = weekend-wide warning
+
+const INITIAL_ROW_COUNT = 10;
 
 type StintBreakdown = {
   sessionType: "fp1" | "fp2" | "fp3";
@@ -85,39 +91,64 @@ export function PaceProjectionPanel({
   raceId,
   endpoint,
   title,
-  buttonLabel,
   emptyMessage,
 }: {
   raceId: number;
   endpoint: "/api/practice-pace" | "/api/race-pace-projection";
   title: string;
-  buttonLabel: string;
   emptyMessage: string;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [rows, setRows] = useState<PaceRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expandedDriverId, setExpandedDriverId] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
-  async function handleClick() {
+  function fetchPace(onDone: () => boolean) {
+    (async () => {
+      try {
+        const res = await fetch(`${endpoint}?raceId=${raceId}`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          if (onDone()) {
+            setError(body.error ?? `Request failed (${res.status})`);
+            setState("error");
+          }
+          return;
+        }
+        const data: { drivers: PaceRow[] } = await res.json();
+        if (onDone()) {
+          setRows(data.drivers);
+          setState("done");
+        }
+      } catch (err) {
+        if (onDone()) {
+          setError(err instanceof Error ? err.message : "Calculation failed");
+          setState("error");
+        }
+      }
+    })();
+  }
+
+  function load() {
     setState("loading");
     setError(null);
-    try {
-      const res = await fetch(`${endpoint}?raceId=${raceId}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? `Request failed (${res.status})`);
-        setState("error");
-        return;
-      }
-      const data: { drivers: PaceRow[] } = await res.json();
-      setRows(data.drivers);
-      setState("done");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Calculation failed");
-      setState("error");
-    }
+    fetchPace(() => true);
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    // Fetch on mount / whenever the race or endpoint changes — this loading
+    // state is intrinsic to the fetch lifecycle the effect starts, not
+    // derivable from props, so a direct setState here is the correct shape.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState("loading");
+    setError(null);
+    fetchPace(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [raceId, endpoint]);
 
   // Bar length represents the gap to the fastest driver (rows are already
   // sorted fastest-first, so relativePace - fastest >= 0 for everyone).
@@ -131,13 +162,20 @@ export function PaceProjectionPanel({
 
   return (
     <HudPanel title={title}>
-      <button
-        onClick={handleClick}
-        disabled={state === "loading"}
-        className="hud-mono border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {state === "loading" ? "Calculating..." : buttonLabel}
-      </button>
+      <div className="flex items-center justify-between gap-3">
+        {state === "loading" && rows.length === 0 ? (
+          <p className="hud-mono text-xs text-slate-500">CALCULATING...</p>
+        ) : (
+          <span />
+        )}
+        <button
+          onClick={load}
+          disabled={state === "loading"}
+          className="hud-mono border border-cyan-500 bg-cyan-950/40 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {state === "loading" ? "..." : "Recalculate"}
+        </button>
+      </div>
 
       {state === "error" && <p className="hud-mono mt-2 text-[11px] text-red-400">{error}</p>}
 
@@ -145,14 +183,22 @@ export function PaceProjectionPanel({
         <p className="hud-mono mt-2 text-xs text-slate-500">{emptyMessage}</p>
       )}
 
+      {state === "done" && rows.length > 0 && rows.length < LOW_FIELD_COVERAGE_THRESHOLD && (
+        <p className="hud-mono mt-2 text-[11px] text-amber-400">
+          ⚠ ONLY {rows.length} DRIVER{rows.length === 1 ? "" : "S"} HAVE USABLE DATA THIS WEEKEND —
+          TREAT THESE NUMBERS AS LOW CONFIDENCE.
+        </p>
+      )}
+
       {state === "done" && rows.length > 0 && (
         <div className="mt-4 flex flex-col gap-1.5">
-          {rows.map((r) => {
+          {(showAll ? rows : rows.slice(0, INITIAL_ROW_COUNT)).map((r) => {
             const color = getTeamColor(r.teamName);
             const gap = r.relativePace - fastest;
             const widthPct = Math.max(3, Math.min(100, (gap / scaleMax) * 100));
             const isFastest = r.rank === 1;
             const isExpanded = expandedDriverId === r.driverId;
+            const isLowConfidence = r.sampleSize != null && r.sampleSize < LOW_CONFIDENCE_SAMPLE_SIZE;
             return (
               <div key={r.driverId}>
                 <button
@@ -163,7 +209,14 @@ export function PaceProjectionPanel({
                     {isExpanded ? "▾" : "▸"}
                   </span>
                   <div className="hud-mono w-6 shrink-0 text-right text-xs text-slate-500">{r.rank}</div>
-                  <div className="w-28 shrink-0 truncate text-sm text-slate-200">{r.driverName}</div>
+                  <div className="w-28 shrink-0 truncate text-sm text-slate-200">
+                    {r.driverName}
+                    {isLowConfidence && (
+                      <span className="ml-1 text-amber-400" title="Low sample size — treat with caution">
+                        ⚠
+                      </span>
+                    )}
+                  </div>
                   <div className="relative h-5 flex-1 overflow-hidden bg-slate-900/60">
                     <div
                       className="hud-bar-fill h-full opacity-90"
@@ -172,6 +225,7 @@ export function PaceProjectionPanel({
                         backgroundColor: color,
                         boxShadow: isFastest ? `0 0 10px 1px ${color}` : undefined,
                         animationDelay: `${r.rank * 40}ms`,
+                        opacity: isLowConfidence ? 0.5 : 0.9,
                       }}
                     />
                   </div>
@@ -189,6 +243,14 @@ export function PaceProjectionPanel({
               </div>
             );
           })}
+          {rows.length > INITIAL_ROW_COUNT && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+            >
+              {showAll ? "Show less ▴" : `+${rows.length - INITIAL_ROW_COUNT} more ▾`}
+            </button>
+          )}
         </div>
       )}
     </HudPanel>

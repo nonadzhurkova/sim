@@ -1,6 +1,11 @@
+"use client";
+
+import { useState } from "react";
 import type { DriverSessionPace } from "@/queries/session-pace";
 import { getTeamColor } from "@/lib/team-colors";
 import { HudPanel } from "./hud-panel";
+
+const INITIAL_ROW_COUNT = 10;
 
 function formatLapTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -14,6 +19,8 @@ function driverCode(name: string): string {
 }
 
 export function SessionPaceTable({ title, rows }: { title: string; rows: DriverSessionPace[] }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (rows.length === 0) {
     return (
       <HudPanel title={title}>
@@ -21,6 +28,9 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
       </HudPanel>
     );
   }
+
+  const visibleRows = expanded ? rows : rows.slice(0, INITIAL_ROW_COUNT);
+  const hiddenCount = rows.length - INITIAL_ROW_COUNT;
 
   return (
     <HudPanel title={title}>
@@ -34,7 +44,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {visibleRows.map((r) => {
             const color = getTeamColor(r.teamName);
             const isLeader = r.rank === 1;
             return (
@@ -63,6 +73,14 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
           })}
         </tbody>
       </table>
+      {rows.length > INITIAL_ROW_COUNT && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+        >
+          {expanded ? "Show less ▴" : `+${hiddenCount} more ▾`}
+        </button>
+      )}
     </HudPanel>
   );
 }

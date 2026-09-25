@@ -8,13 +8,14 @@ export type PaceProjectionRow = {
   driverName: string;
   teamName: string | null;
   relativePace: number;
+  sampleSize: number | null;
   rank: number;
 };
 
 /** Resolves driver names/teams and ranks a raceId->pace Map into API-ready rows. */
 export async function toRankedPaceRows(
   raceId: number,
-  paceMap: Map<number, number>,
+  paceMap: Map<number, number | { pace: number; sampleSize: number }>,
 ): Promise<PaceProjectionRow[]> {
   if (paceMap.size === 0) return [];
 
@@ -26,12 +27,16 @@ export async function toRankedPaceRows(
   const nameById = new Map(driverRows.map((d) => [d.id, d.name]));
 
   return [...paceMap.entries()]
-    .map(([driverId, pace]) => ({
-      driverId,
-      driverName: nameById.get(driverId) ?? "Unknown",
-      teamName: teamById.get(driverId)?.teamName ?? null,
-      relativePace: pace,
-    }))
+    .map(([driverId, entry]) => {
+      const isObject = typeof entry === "object";
+      return {
+        driverId,
+        driverName: nameById.get(driverId) ?? "Unknown",
+        teamName: teamById.get(driverId)?.teamName ?? null,
+        relativePace: isObject ? entry.pace : entry,
+        sampleSize: isObject ? entry.sampleSize : null,
+      };
+    })
     .sort((a, b) => a.relativePace - b.relativePace)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }

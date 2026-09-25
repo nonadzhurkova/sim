@@ -11,6 +11,7 @@ const FP_BASE_WEIGHTS: Record<"fp1" | "fp2" | "fp3", number> = {
 const OUT_LAP_THRESHOLD = 1.07; // F1's 107% rule, applied per-driver-per-session-per-compound
 const RACE_SIM_RUN_LENGTH = 4; // consecutive similar-pace laps treated as a long run, not one-lap pace
 const RACE_SIM_TOLERANCE = 0.015; // 1.5% lap-to-lap variance counts as "similar pace"
+const RACE_SIM_MIN_SLOWDOWN = 1.03; // a cluster must be >=3% slower than the driver's best lap to count as a "run"
 
 /**
  * Practice pace per driver for one race weekend, using FP1-3 sessions that
@@ -80,25 +81,30 @@ type StintInfo = { id: number; driverId: number; compound: string | null; lapSta
 type LapInfo = { driverId: number; lapNumber: number; lapDuration: number | null };
 
 /**
- * Within one driver's stint (laps in lap order), detects and drops laps
- * belonging to a "race simulation" run: a window of RACE_SIM_RUN_LENGTH+
- * consecutive laps where most laps cluster within RACE_SIM_TOLERANCE of the
- * window's median. Using "most laps in a window" rather than an unbroken
- * chain means a single anomalous lap — traffic, a yellow flag — doesn't
- * prevent detecting the long run it sits inside. These runs are fuel-heavy
- * long-run laps, not representative of one-lap pace, and would otherwise
- * dominate a median (a driver who does one 12-lap sim and two quick laps
- * looks "slow" if all 14 laps are pooled together). Isolated quick/slow
- * laps are kept as-is.
+ * Within one driver's stint (laps in lap order), detects laps belonging to
+ * a "race simulation" run: a window of RACE_SIM_RUN_LENGTH+ consecutive
+ * laps where most laps cluster within RACE_SIM_TOLERANCE of the window's
+ * median. Using "most laps in a window" rather than an unbroken chain means
+ * a single anomalous lap — traffic, a yellow flag — doesn't prevent
+ * detecting the long run it sits inside.
+ *
+ * Critically, a cluster only counts as a race-sim run if it's at least
+ * RACE_SIM_MIN_SLOWDOWN slower than the driver's best lap across all their
+ * laps passed in: a tight cluster of *fast* laps (a driver finding a good
+ * rhythm on a push run) looks identical to a slow fuel-heavy run under pure
+ * variance-clustering, and would otherwise get wrongly discarded as noise —
+ * leaving only slower, unrepresentative laps as the driver's "clean" pace.
  */
 function findRaceSimLapFlags(sortedLapDurations: number[]): boolean[] {
   const n = sortedLapDurations.length;
   const isSimLap = new Array(n).fill(false);
+  const overallBest = Math.min(...sortedLapDurations);
 
   for (let start = 0; start <= n - RACE_SIM_RUN_LENGTH; start++) {
     for (let end = start + RACE_SIM_RUN_LENGTH; end <= n; end++) {
       const window = sortedLapDurations.slice(start, end);
       const windowMedian = median(window);
+      if (windowMedian < overallBest * RACE_SIM_MIN_SLOWDOWN) continue; // too fast to be a "long run"
       const inTolerance = window.filter(
         (lap) => Math.abs(lap - windowMedian) / windowMedian <= RACE_SIM_TOLERANCE,
       ).length;
@@ -223,7 +229,13 @@ async function computeSessionCompoundRelativePace(sessionId: number): Promise<Ma
  * laps, since race pace is about sustained pace, not one-lap performance.
  * Does not yet model degradation-within-a-run (see project notes).
  */
-export async function computeRacePaceProjection(raceId: number): Promise<Map<number, number>> {
+export type RacePaceProjection = {
+  pace: number;
+  /** Largest compound-field sample size backing this driver's number, across sessions. Low (e.g. 1) means the driver was the sole car on that compound — the "gap" is not meaningful. */
+  sampleSize: number;
+};
+
+export async function computeRacePaceProjection(raceId: number): Promise<Map<number, RacePaceProjection>> {
   const fpSessions = await db
     .select({ id: sessions.id, sessionType: sessions.sessionType, weather: sessions.weather })
     .from(sessions)
@@ -235,7 +247,7 @@ export async function computeRacePaceProjection(raceId: number): Promise<Map<num
   }[];
   if (dryFpSessions.length === 0) return new Map();
 
-  const sessionPaceByType = new Map<"fp1" | "fp2" | "fp3", Map<number, number>>();
+  const sessionPaceByType = new Map<"fp1" | "fp2" | "fp3", Map<number, { pace: number; sampleSize: number }>>();
   for (const session of dryFpSessions) {
     const pace = await computeSessionRaceSimRelativePace(session.id);
     sessionPaceByType.set(session.sessionType, pace);
@@ -249,25 +261,29 @@ export async function computeRacePaceProjection(raceId: number): Promise<Map<num
     for (const driverId of paceMap.keys()) allDriverIds.add(driverId);
   }
 
-  const result = new Map<number, number>();
+  const result = new Map<number, RacePaceProjection>();
   for (const driverId of allDriverIds) {
     let weightedSum = 0;
     let weightUsed = 0;
+    let maxSampleSize = 0;
     for (const type of availableTypes) {
-      const pace = sessionPaceByType.get(type)?.get(driverId);
-      if (pace == null) continue;
+      const entry = sessionPaceByType.get(type)?.get(driverId);
+      if (entry == null) continue;
       const w = FP_BASE_WEIGHTS[type] / totalWeight;
-      weightedSum += pace * w;
+      weightedSum += entry.pace * w;
       weightUsed += w;
+      maxSampleSize = Math.max(maxSampleSize, entry.sampleSize);
     }
     if (weightUsed > 0) {
-      result.set(driverId, weightedSum / weightUsed);
+      result.set(driverId, { pace: weightedSum / weightUsed, sampleSize: maxSampleSize });
     }
   }
   return result;
 }
 
-async function computeSessionRaceSimRelativePace(sessionId: number): Promise<Map<number, number>> {
+async function computeSessionRaceSimRelativePace(
+  sessionId: number,
+): Promise<Map<number, { pace: number; sampleSize: number }>> {
   const sessionStints: StintInfo[] = await db
     .select({
       id: stints.id,
@@ -337,11 +353,12 @@ async function computeSessionRaceSimRelativePace(sessionId: number): Promise<Map
     }
   }
 
-  const result = new Map<number, number>();
+  const result = new Map<number, { pace: number; sampleSize: number }>();
   for (const [driverId, entries] of compoundRelativePaces) {
     const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
     const weightedPace = entries.reduce((sum, e) => sum + e.pace * e.weight, 0) / totalWeight;
-    result.set(driverId, weightedPace);
+    const maxSampleSize = Math.max(...entries.map((e) => e.weight));
+    result.set(driverId, { pace: weightedPace, sampleSize: maxSampleSize });
   }
   return result;
 }

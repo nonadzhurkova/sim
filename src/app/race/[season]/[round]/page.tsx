@@ -10,6 +10,8 @@ import { RatingsPanel } from "@/components/ratings-panel";
 import { PredictionStub } from "@/components/prediction-stub";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
+import { CarPerformancePanel } from "@/components/car-performance-panel";
+import { getCarPerformance } from "@/queries/car-performance";
 
 const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
@@ -31,9 +33,10 @@ export default async function RacePage({
   const race = await getRaceByRoute(season, round);
   if (!race) notFound();
 
-  const [sessionPace, comparison] = await Promise.all([
+  const [sessionPace, comparison, carPerformance] = await Promise.all([
     getAllSessionPaceForRace(race.id),
     getYearOverYearComparison(season, round),
+    getCarPerformance(season, race.id),
   ]);
 
   const hasRaceResult = sessionPace.r != null && sessionPace.r.length > 0;
@@ -48,8 +51,29 @@ export default async function RacePage({
       </div>
 
       <div className="mt-6">
+        <CarPerformancePanel rows={carPerformance} seasonLabel={`${season} Season`} />
+      </div>
+
+      <div className="mt-6">
         <FastestLapBanner sessionPace={sessionPace} comparison={comparison} />
       </div>
+
+      {hasPracticeData && (
+        <section className="mt-8 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <PaceProjectionPanel
+            raceId={race.id}
+            endpoint="/api/practice-pace"
+            title="Projected Qualifying Pace (from practice so far)"
+            emptyMessage="NO DRY PRACTICE LAPS AVAILABLE YET FOR THIS WEEKEND."
+          />
+          <PaceProjectionPanel
+            raceId={race.id}
+            endpoint="/api/race-pace-projection"
+            title="Projected Race Pace (from long runs so far)"
+            emptyMessage="NO LONG-RUN STINTS DETECTED YET FOR THIS WEEKEND."
+          />
+        </section>
+      )}
 
       <section className="mt-8">
         <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
@@ -66,25 +90,6 @@ export default async function RacePage({
           )}
         </div>
       </section>
-
-      {hasPracticeData && (
-        <section className="mt-8 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <PaceProjectionPanel
-            raceId={race.id}
-            endpoint="/api/practice-pace"
-            title="Projected Qualifying Pace (from practice so far)"
-            buttonLabel="Calculate Qualifying Pace"
-            emptyMessage="NO DRY PRACTICE LAPS AVAILABLE YET FOR THIS WEEKEND."
-          />
-          <PaceProjectionPanel
-            raceId={race.id}
-            endpoint="/api/race-pace-projection"
-            title="Projected Race Pace (from long runs so far)"
-            buttonLabel="Calculate Race Pace"
-            emptyMessage="NO LONG-RUN STINTS DETECTED YET FOR THIS WEEKEND."
-          />
-        </section>
-      )}
 
       {!raceHasHappened && !hasRaceResult && (
         <section className="mt-8">
