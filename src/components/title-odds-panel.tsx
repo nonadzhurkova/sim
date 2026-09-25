@@ -6,6 +6,7 @@ import type { SeasonProjection } from "@/sim/season";
 import { HudPanel } from "./hud-panel";
 import { TeamBadge } from "./team-badge";
 import { getTeamColor } from "@/lib/team-colors";
+import { AnimatedNumber } from "./animated-number";
 
 /**
  * Championship title odds for the current season.
@@ -32,7 +33,6 @@ function OddsRow({
   titlePct,
   positionPct,
   href,
-  live,
 }: {
   index: number;
   name: string;
@@ -43,7 +43,6 @@ function OddsRow({
   titlePct: number;
   positionPct: number[];
   href: string;
-  live: boolean;
 }) {
   const color = getTeamColor(teamName);
   const medal = ["text-yellow-300", "text-slate-300", "text-amber-600"][index] ?? "text-slate-500";
@@ -77,7 +76,7 @@ function OddsRow({
           <span className="hud-mono text-[10px] text-slate-600">now</span>
           <span className="text-slate-700">→</span>
           <span className="hud-mono text-sm font-bold" style={{ color }}>
-            {projectedPoints.toFixed(0)}
+            <AnimatedNumber value={projectedPoints} />
           </span>
           <span className="hud-mono text-[10px] text-slate-600">
             projected{gain > 0 ? ` (+${gain})` : ""}
@@ -88,30 +87,32 @@ function OddsRow({
       {/* Stacked distribution across final championship positions. Once a
           title is effectively decided the single win probability stops being
           informative — this keeps showing where the real uncertainty is, e.g.
-          who takes 2nd, 3rd or 4th. */}
-      <div className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
+          who takes 2nd, 3rd or 4th. Segments transition their own width, so a
+          shift in the odds visibly redistributes across the bar rather than
+          just changing the number beside it. */}
+      <div className="hidden w-32 shrink-0 items-center gap-2 md:flex lg:w-44">
         <div className="relative flex h-2.5 flex-1 overflow-hidden bg-slate-900/60">
-          {positionPct.map((p, i) =>
-            p <= 0 ? null : (
-              <div
-                key={i}
-                title={`P${i + 1}: ${pct(p)}%`}
-                className={live ? "h-full transition-[width] duration-300 ease-out" : "h-full"}
-                style={{
-                  width: `${p * 100}%`,
-                  backgroundColor: color,
-                  // Later positions fade, so the bar reads as a gradient from
-                  // "wins the title" to "finishes further back".
-                  opacity: 1 - i * 0.15,
-                }}
-              />
-            ),
-          )}
+          {positionPct.map((p, i) => (
+            <div
+              key={i}
+              title={`P${i + 1}: ${pct(p)}%`}
+              className="h-full transition-[width] duration-500 ease-out"
+              style={{
+                width: `${p * 100}%`,
+                backgroundColor: color,
+                // Later positions fade, so the bar reads as a gradient from
+                // "wins the title" to "finishes further back".
+                opacity: p > 0 ? 1 - i * 0.15 : 0,
+              }}
+            />
+          ))}
         </div>
       </div>
 
-      <div className="flex w-14 shrink-0 items-center justify-end">
-        <span className="hud-mono text-base font-bold text-cyan-300">{pct(titlePct)}%</span>
+      <div className="flex w-16 shrink-0 items-center justify-end">
+        <span className="hud-mono text-base font-bold text-cyan-300">
+          <AnimatedNumber value={titlePct * 100} decimals={1} suffix="%" />
+        </span>
       </div>
     </Link>
   );
@@ -245,65 +246,74 @@ export function TitleOddsPanel({ season }: { season: number }) {
     </>
   );
 
-  // Two separate panels rather than two columns of one: side by side, a
-  // driver's row lined up against a constructor's row read as if the driver
-  // belonged to that team.
+  // Side by side inside one panel, but each half keeps its own heading and a
+  // solid divider between them — close together read as one flat list, and a
+  // driver's row lined up against an unrelated constructor's row looked like
+  // that driver raced for that team.
   return (
-    <div className="flex flex-col gap-4">
-      <HudPanel
-        title={`${projection.season} Drivers' Championship Prediction — ${projection.racesRemaining} races left`}
-      >
-        {header}
-        <div className="mt-3">
-          {projection.drivers.slice(0, 6).map((d, i) => (
-            <OddsRow
-              key={d.id}
-              index={i}
-              name={d.name}
-              teamName={d.teamName}
-              headshotUrl={d.headshotUrl}
-              currentPoints={d.currentPoints}
-              projectedPoints={d.projectedPoints}
-              titlePct={d.titlePct}
-              positionPct={d.positionPct}
-              href={`/driver/${d.id}`}
-              live={state === "loading"}
-            />
-          ))}
-        </div>
-      </HudPanel>
+    <HudPanel
+      title={`${projection.season} Championship Prediction — ${projection.racesRemaining} races left`}
+    >
+      {header}
 
-      <HudPanel title={`${projection.season} Constructors' Championship Prediction`}>
-        <div className="mt-1">
-          {projection.teams.slice(0, 6).map((t, i) => (
-            <OddsRow
-              key={t.id}
-              index={i}
-              name={t.name}
-              teamName={t.teamName}
-              headshotUrl={null}
-              currentPoints={t.currentPoints}
-              projectedPoints={t.projectedPoints}
-              titlePct={t.titlePct}
-              positionPct={t.positionPct}
-              href={`/team/${t.id}?season=${projection.season}`}
-              live={state === "loading"}
-            />
-          ))}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="hud-mono text-[9px] text-slate-600">
-            BAR SHOWS THE FULL SPREAD OF FINISHING POSITIONS — HOVER A SEGMENT FOR THE ODDS OF
-            EACH. THE FIGURE ON THE RIGHT IS THE TITLE CHANCE.
+      <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-0">
+        <div className="lg:pr-6">
+          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-cyan-400">
+            {"//"} Drivers&apos; Championship
           </p>
-          <Link
-            href="/standings"
-            className="hud-mono shrink-0 text-[10px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
-          >
-            Full standings →
-          </Link>
+          <div className="mt-2">
+            {projection.drivers.slice(0, 6).map((d, i) => (
+              <OddsRow
+                key={d.id}
+                index={i}
+                name={d.name}
+                teamName={d.teamName}
+                headshotUrl={d.headshotUrl}
+                currentPoints={d.currentPoints}
+                projectedPoints={d.projectedPoints}
+                titlePct={d.titlePct}
+                positionPct={d.positionPct}
+                href={`/driver/${d.id}`}
+              />
+            ))}
+          </div>
         </div>
-      </HudPanel>
-    </div>
+
+        <div className="border-t border-slate-800 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-cyan-400">
+            {"//"} Constructors&apos; Championship
+          </p>
+          <div className="mt-2">
+            {projection.teams.slice(0, 6).map((t, i) => (
+              <OddsRow
+                key={t.id}
+                index={i}
+                name={t.name}
+                teamName={t.teamName}
+                headshotUrl={null}
+                currentPoints={t.currentPoints}
+                projectedPoints={t.projectedPoints}
+                titlePct={t.titlePct}
+                positionPct={t.positionPct}
+                href={`/team/${t.id}?season=${projection.season}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/60 pt-3">
+        <p className="hud-mono text-[9px] text-slate-600">
+          BAR SHOWS THE FULL SPREAD OF FINISHING POSITIONS — HOVER A SEGMENT FOR THE ODDS OF
+          EACH. THE FIGURE ON THE RIGHT IS THE TITLE CHANCE.
+        </p>
+        <Link
+          href="/standings"
+          className="hud-mono shrink-0 text-[10px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+        >
+          Full standings →
+        </Link>
+      </div>
+    </HudPanel>
   );
 }
