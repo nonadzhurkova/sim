@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRaceByRoute } from "@/queries/races";
 import { getAllSessionPaceForRace } from "@/queries/session-pace";
@@ -45,7 +46,15 @@ export default async function RacePage({
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
       <div className="flex items-center justify-between gap-4">
         <RaceHeader race={race} />
-        <ImportButton season={season} />
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/race/${season}/${round}/analysis`}
+            className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
+          >
+            Telemetry Analysis →
+          </Link>
+          <ImportButton season={season} />
+        </div>
       </div>
 
       <div className="mt-6">
