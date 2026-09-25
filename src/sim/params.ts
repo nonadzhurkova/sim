@@ -108,6 +108,28 @@ export const GRID_PENALTY_PER_POSITION: Record<string, number> = {
 export const GRID_PENALTY_DEFAULT = 0.2;
 
 /**
+ * How strongly race craft shifts a car's effective grid slot.
+ *
+ * DISABLED (0) after backtesting. Race craft measures how many positions a
+ * driver typically beats their starting slot by, controlling for what that
+ * slot normally yields (see ratings/race-craft.ts). The effect is genuinely
+ * present in the data — controlling for the grid slot strengthens it from
+ * r=0.10 to r=0.19, and there is a ~1.4 position spread between the best and
+ * worst converters — but it is too weak and too noisy to help a prediction:
+ *
+ *   weight   2026 top-1 / log loss    2025 top-1 / log loss
+ *   0.0      57.1% / 1.507            45.8% / 1.194
+ *   1.0      50.0% / 1.662            37.5% / 1.363
+ *   2.0      42.9% / 1.958            37.5% / 1.610
+ *
+ * Both seasons degrade monotonically as the weight rises. A real-but-small
+ * historical tendency does not survive contact with the race-to-race variance
+ * it has to compete against. Kept at 0 with the machinery intact, so it can be
+ * revisited if more seasons of data change the picture.
+ */
+export const RACE_CRAFT_WEIGHT = 0;
+
+/**
  * Probability that a safety car / red flag materially bunches the field, and
  * how much of each driver's pace advantage it erases when it does. A safety
  * car compresses gaps and randomises strategy, which mostly helps cars that

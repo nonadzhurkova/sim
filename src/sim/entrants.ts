@@ -14,6 +14,7 @@ import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
 import { computeRacePaceProjection } from "@/ratings/practice-pace";
 import { computeQualiForm } from "@/ratings/quali-form";
+import { computeRaceCraft } from "@/ratings/race-craft";
 import {
   PACE_WEIGHTS,
   DEFAULT_DNF_RATE,
@@ -44,6 +45,12 @@ export type SimEntrant = {
   };
   /** Recent qualifying form, used to seed a simulated grid when qualifying hasn't happened. */
   qualiForm: number | null;
+  /**
+   * Positions this driver typically beats their grid slot by. Applied as an
+   * effective grid offset rather than a pace change: it models converting a
+   * starting position, not raw speed.
+   */
+  raceCraft: number | null;
 };
 
 export type SimContext = {
@@ -204,9 +211,10 @@ export async function buildSimContext(
   if (fieldRatings.length === 0) return null;
 
   const fieldDriverIdList = fieldRatings.map((r) => r.driverId);
-  const [teamsByDriver, qualiFormByDriver] = await Promise.all([
+  const [teamsByDriver, qualiFormByDriver, raceCraftByDriver] = await Promise.all([
     getDriverTeamsAsOf(raceId, fieldDriverIdList),
     computeQualiForm(raceId, fieldDriverIdList),
+    computeRaceCraft(race.season, race.round),
   ]);
   const carStrengthByTeam = new Map(
     teamRatingRows
@@ -220,6 +228,7 @@ export async function buildSimContext(
     const carStrength = team ? carStrengthByTeam.get(team.teamId) ?? null : null;
     const projection = racePaceProjection.get(r.driverId)?.pace ?? null;
     const qualiForm = qualiFormByDriver.get(r.driverId) ?? null;
+    const raceCraft = raceCraftByDriver.get(r.driverId)?.value ?? null;
 
     const expectedPace = composePace([
       { value: r.basePace, weight: weights.basePace },
@@ -243,6 +252,7 @@ export async function buildSimContext(
       dnfRate: Math.min(MAX_DNF_RATE, Math.max(MIN_DNF_RATE, rawDnf)),
       gridPosition: gridByDriver.get(r.driverId) ?? null,
       qualiForm,
+      raceCraft,
       signals: {
         basePace: r.basePace != null,
         practicePace: r.practicePace != null,

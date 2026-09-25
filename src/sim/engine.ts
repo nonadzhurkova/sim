@@ -6,6 +6,7 @@ import {
   QUALI_FORM_BLEND,
   GRID_PENALTY_PER_POSITION,
   GRID_PENALTY_DEFAULT,
+  RACE_CRAFT_WEIGHT,
   SAFETY_CAR_PROBABILITY,
   SAFETY_CAR_PROBABILITY_DEFAULT,
   SAFETY_CAR_COMPRESSION,
@@ -50,6 +51,7 @@ export type ModelOverrides = {
   paceNoiseStdDev?: number;
   qualiNoiseStdDev?: number;
   gridPenaltyPerPosition?: number;
+  raceCraftWeight?: number;
   safetyCarProbability?: number;
   safetyCarCompression?: number;
   safetyCarShuffleFactor?: number;
@@ -126,6 +128,7 @@ export function* simulationIterator(
   const paceNoise = overrides.paceNoiseStdDev ?? PACE_NOISE_STD_DEV;
   const qualiNoise = overrides.qualiNoiseStdDev ?? QUALI_NOISE_STD_DEV;
   const scCompression = overrides.safetyCarCompression ?? SAFETY_CAR_COMPRESSION;
+  const raceCraftWeight = overrides.raceCraftWeight ?? RACE_CRAFT_WEIGHT;
   const gridPenalty =
     overrides.gridPenaltyPerPosition ??
     (ctx.circuitType != null ? GRID_PENALTY_PER_POSITION[ctx.circuitType] : undefined) ??
@@ -187,7 +190,11 @@ export function* simulationIterator(
       const paceRoll = e.expectedPace + sampleNormal(rng, 0, paceNoise);
       // Grid position is a real handicap: a fast car starting 15th loses time
       // stuck behind slower cars, and how much depends on the circuit.
-      const gridCost = (grid[i] - 1) * gridPenalty;
+      // Race craft shifts the effective slot: a driver who reliably beats
+      // their grid position is simulated as starting further forward, which
+      // is where that skill actually shows up.
+      const effectiveGrid = grid[i] - (e.raceCraft ?? 0) * raceCraftWeight;
+      const gridCost = Math.max(0, effectiveGrid - 1) * gridPenalty;
       effectivePace[i] = paceRoll + gridCost;
       tallies[i].gridSum += grid[i];
     }
