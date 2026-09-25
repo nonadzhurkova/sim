@@ -119,8 +119,20 @@ async function checkOpenF1Freshness(
         },
       };
     }
-    const upstreamSessionCount = (data as { session_name: string }[]).filter(
-      (s) => s.session_name in SESSION_TYPE_MAP,
+    // Only sessions that have actually started count toward "available to
+    // import" — comparing against the whole season's schedule (including
+    // rounds months away) made every in-progress season look permanently
+    // behind, since upstream lists the full calendar up front. A small grace
+    // window covers a session that started moments ago but whose data OpenF1
+    // hasn't finished publishing yet.
+    const now = Date.now();
+    const GRACE_MS = 5 * 60 * 1000;
+    const upstreamSessionCount = (
+      data as { session_name: string; date_start: string }[]
+    ).filter(
+      (s) =>
+        s.session_name in SESSION_TYPE_MAP &&
+        new Date(s.date_start).getTime() < now - GRACE_MS,
     ).length;
     return {
       upstreamSessionCount,
