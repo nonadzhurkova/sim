@@ -226,12 +226,16 @@ export async function ingestSeasonSessions(season: number) {
 
     console.log(`[openf1] ${s.circuit_short_name} ${s.session_name} (session_key=${s.session_key})`);
 
-    const weather = await ingestSessionWeather(s.session_key);
-    const dbSessionId = await upsertSession(matchingRace.id, sessionType, s.session_key, weather);
-    const driverNumberToId = await buildDriverNumberMap(s.session_key, allDrivers);
+    try {
+      const weather = await ingestSessionWeather(s.session_key);
+      const dbSessionId = await upsertSession(matchingRace.id, sessionType, s.session_key, weather);
+      const driverNumberToId = await buildDriverNumberMap(s.session_key, allDrivers);
 
-    await ingestLaps(dbSessionId, s.session_key, driverNumberToId);
-    await ingestStints(dbSessionId, s.session_key, driverNumberToId);
+      await ingestLaps(dbSessionId, s.session_key, driverNumberToId);
+      await ingestStints(dbSessionId, s.session_key, driverNumberToId);
+    } catch (err) {
+      console.error(`[openf1] failed to ingest session ${s.session_key} (${s.circuit_short_name} ${s.session_name}), skipping:`, err instanceof Error ? err.message : err);
+    }
     await sleep(300); // OpenF1 rate limit is generous but not unlimited
   }
 
