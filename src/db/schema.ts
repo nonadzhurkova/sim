@@ -176,20 +176,41 @@ export const stints = pgTable(
   (t) => [unique().on(t.sessionId, t.driverId, t.stintNumber)],
 );
 
-export const driverRatings = pgTable("driver_ratings", {
-  id: serial("id").primaryKey(),
-  driverId: integer("driver_id")
-    .notNull()
-    .references(() => drivers.id),
-  raceId: integer("race_id")
-    .notNull()
-    .references(() => races.id),
-  basePace: real("base_pace"),
-  reliability: real("reliability"),
-  trackAffinity: real("track_affinity"),
-  practicePace: real("practice_pace"),
-  computedAt: timestamp("computed_at").defaultNow(),
-});
+export const driverRatings = pgTable(
+  "driver_ratings",
+  {
+    id: serial("id").primaryKey(),
+    driverId: integer("driver_id")
+      .notNull()
+      .references(() => drivers.id),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    basePace: real("base_pace"),
+    driverReliability: real("driver_reliability"), // DNF rate, driver-caused only (crashes, spins)
+    trackAffinity: real("track_affinity"),
+    practicePace: real("practice_pace"),
+    computedAt: timestamp("computed_at").defaultNow(),
+  },
+  (t) => [unique().on(t.driverId, t.raceId)],
+);
+
+export const teamRatings = pgTable(
+  "team_ratings",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    carStrength: real("car_strength"), // season-long pace, isolated from driver skill
+    carReliability: real("car_reliability"), // DNF rate, car-caused (engine/gearbox/etc.), shared by teammates
+    computedAt: timestamp("computed_at").defaultNow(),
+  },
+  (t) => [unique().on(t.teamId, t.raceId)],
+);
 
 export const simulationRuns = pgTable("simulation_runs", {
   id: serial("id").primaryKey(),

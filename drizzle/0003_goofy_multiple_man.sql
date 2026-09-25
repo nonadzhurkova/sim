@@ -1,0 +1,1 @@
+ALTER TABLE "driver_ratings" DROP COLUMN "reliability";
