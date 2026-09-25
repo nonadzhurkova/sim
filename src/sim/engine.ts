@@ -89,6 +89,33 @@ export function runSimulation(
     overrides?: ModelOverrides;
   } = {},
 ): SimulationOutcome {
+  // Drain the generator synchronously — identical work, just without pausing.
+  const gen = simulationIterator(ctx, iterations, options);
+  let step = gen.next();
+  while (!step.done) step = gen.next();
+  return step.value;
+}
+
+/**
+ * The simulation as a generator, yielding a snapshot every
+ * `progressInterval` iterations and returning the final outcome.
+ *
+ * The loop is CPU-bound and synchronous, so a caller that wants to stream
+ * progress to a browser has to be able to pause it and let the event loop
+ * breathe — otherwise every chunk is written in one burst at the end and
+ * nothing actually streams. Yielding gives the caller that pause point
+ * without the engine needing to know anything about streaming or timers.
+ */
+export function* simulationIterator(
+  ctx: SimContext,
+  iterations: number,
+  options: {
+    seed?: number;
+    onProgress?: (completed: number, snapshot: SimulationOutcome) => void;
+    progressInterval?: number;
+    overrides?: ModelOverrides;
+  } = {},
+): Generator<SimulationOutcome, SimulationOutcome, void> {
   const { seed = 1, onProgress, progressInterval, overrides = {} } = options;
   const rng = createRng(seed);
   const entrants = ctx.entrants;
@@ -214,8 +241,10 @@ export function runSimulation(
       }
     }
 
-    if (onProgress && progressInterval && (iter + 1) % progressInterval === 0) {
-      onProgress(iter + 1, buildOutcome(ctx, entrants, tallies, iter + 1));
+    if (progressInterval && (iter + 1) % progressInterval === 0 && iter + 1 < iterations) {
+      const snapshot = buildOutcome(ctx, entrants, tallies, iter + 1);
+      onProgress?.(iter + 1, snapshot);
+      yield snapshot;
     }
   }
 

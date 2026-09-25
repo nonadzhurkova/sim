@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { simulationRuns, simulationResults } from "@/db/schema";
 import { eq, sql, desc } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
-import { runSimulation, type SimulationOutcome } from "./engine";
+import { runSimulation, simulationIterator, type SimulationOutcome } from "./engine";
 import { DEFAULT_ITERATIONS } from "./params";
 
 /** How often (in iterations) partial results are flushed to the DB mid-run. */
@@ -86,6 +86,95 @@ export async function runAndStoreSimulation(
       .set({ status: "failed", completedAt: new Date() })
       .where(eq(simulationRuns.id, run.id));
     throw err;
+  }
+}
+
+/** One event in a streamed simulation run. */
+export type SimulationProgressEvent =
+  | { type: "progress"; completed: number; total: number; drivers: SimulationOutcome["drivers"] }
+  | { type: "done"; result: StoredSimulation }
+  | { type: "error"; error: string };
+
+/**
+ * Runs a simulation, yielding progress snapshots as it goes, then the final
+ * stored result. Same work and same persistence as runAndStoreSimulation —
+ * this variant just reports intermediate state so a client can watch the
+ * probabilities converge instead of staring at a spinner.
+ *
+ * Between batches it yields to the event loop (`setImmediate`). Without that
+ * the synchronous engine loop would hold the thread for the whole run and
+ * every chunk would reach the browser in one burst at the end, which defeats
+ * the point of streaming.
+ */
+export async function* streamSimulation(
+  raceId: number,
+  iterations: number = DEFAULT_ITERATIONS,
+  options: { seed?: number } = {},
+): AsyncGenerator<SimulationProgressEvent> {
+  const ctx = await buildSimContext(raceId);
+  if (!ctx) {
+    yield {
+      type: "error",
+      error:
+        "Not enough data to simulate this race — no driver ratings or pace signals are available for it yet.",
+    };
+    return;
+  }
+
+  const [run] = await db
+    .insert(simulationRuns)
+    .values({ raceId, iterationCount: iterations, status: "running", startedAt: new Date() })
+    .returning({ id: simulationRuns.id });
+  const startedAt = new Date();
+
+  try {
+    // Report often enough to look alive even on a short run, but not so often
+    // that the JSON writing costs more than the simulation it is reporting on.
+    const progressInterval = Math.max(100, Math.floor(iterations / 40));
+    const gen = simulationIterator(ctx, iterations, {
+      seed: options.seed ?? raceId,
+      progressInterval,
+    });
+
+    let step = gen.next();
+    while (!step.done) {
+      yield {
+        type: "progress",
+        completed: step.value.iterations,
+        total: iterations,
+        drivers: step.value.drivers,
+      };
+      await new Promise((resolve) => setImmediate(resolve));
+      step = gen.next();
+    }
+    const outcome = step.value;
+
+    await persistResults(run.id, outcome);
+    const completedAt = new Date();
+    await db
+      .update(simulationRuns)
+      .set({ status: "completed", completedAt })
+      .where(eq(simulationRuns.id, run.id));
+
+    yield {
+      type: "done",
+      result: {
+        runId: run.id,
+        raceId,
+        iterations: outcome.iterations,
+        status: "completed",
+        startedAt,
+        completedAt,
+        hasRealGrid: outcome.hasRealGrid,
+        drivers: outcome.drivers,
+      },
+    };
+  } catch (err) {
+    await db
+      .update(simulationRuns)
+      .set({ status: "failed", completedAt: new Date() })
+      .where(eq(simulationRuns.id, run.id));
+    yield { type: "error", error: err instanceof Error ? err.message : "Simulation failed" };
   }
 }
 

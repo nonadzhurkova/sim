@@ -45,3 +45,55 @@ body {
   transform-origin: left;
   animation: grow-bar 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Sweeping highlight along the simulation progress bar, so the bar still
+   reads as active in the gaps between progress ticks. */
+@keyframes hud-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+.hud-scan {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(34, 211, 238, 0.55),
+    transparent
+  );
+  animation: hud-scan 1.1s linear infinite;
+}
+
+/* Animated "..." that doesn't reflow the text around it. */
+@keyframes hud-ellipsis {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75%,
+  100% {
+    content: "...";
+  }
+}
+
+.hud-ellipsis::after {
+  content: "...";
+  animation: hud-ellipsis 1.2s steps(1, end) infinite;
+}
+
+/* Respect a reduced-motion preference: the progress bar still fills and the
+   numbers still update, but the decorative sweep and ellipsis hold still. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-scan,
+  .hud-ellipsis::after {
+    animation: none;
+  }
+}

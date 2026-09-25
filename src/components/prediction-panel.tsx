@@ -73,31 +73,66 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
   const [error, setError] = useState<string | null>(null);
   const [iterations, setIterations] = useState(8000);
   const [showAll, setShowAll] = useState(false);
+  const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
+  // Live standings from the in-flight run, shown while it converges.
+  const [liveDrivers, setLiveDrivers] = useState<DriverOutcome[]>([]);
 
   async function run() {
     setState("loading");
     setError(null);
+    setProgress({ completed: 0, total: iterations });
+    setLiveDrivers([]);
     try {
       const res = await fetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raceId, iterations }),
       });
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? `Request failed (${res.status})`);
         setState("error");
         return;
       }
-      setResult(await res.json());
-      setState("done");
+
+      // NDJSON stream: one event per line. Buffer partial lines, since a
+      // chunk boundary can land in the middle of a JSON object.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === "progress") {
+            setProgress({ completed: event.completed, total: event.total });
+            setLiveDrivers(event.drivers);
+          } else if (event.type === "done") {
+            setResult(event.result);
+            setProgress({ completed: event.result.iterations, total: event.result.iterations });
+            setState("done");
+          } else if (event.type === "error") {
+            setError(event.error);
+            setState("error");
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Simulation failed");
       setState("error");
     }
   }
 
-  const rows = result?.drivers ?? [];
+  // While a run is in flight the table is driven by the latest streamed
+  // snapshot, so the probabilities are visibly converging rather than the
+  // panel sitting blank until the end.
+  const isLive = state === "loading" && liveDrivers.length > 0;
+  const rows = isLive ? liveDrivers : result?.drivers ?? [];
   const visible = showAll ? rows : rows.slice(0, INITIAL_ROW_COUNT);
 
   return (
@@ -141,23 +176,52 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
       )}
 
       {state === "loading" && (
-        <p className="hud-mono mt-3 text-xs text-cyan-400">
-          RUNNING {iterations.toLocaleString()} ITERATIONS...
-        </p>
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between">
+            <p className="hud-mono text-xs text-cyan-400">
+              SIMULATING<span className="hud-ellipsis" /> {progress
+                ? `${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()}`
+                : iterations.toLocaleString()}{" "}
+              RACES
+            </p>
+            <p className="hud-mono text-xs text-cyan-300">
+              {progress && progress.total > 0
+                ? Math.round((progress.completed / progress.total) * 100)
+                : 0}
+              %
+            </p>
+          </div>
+          <div className="relative mt-1.5 h-1.5 overflow-hidden bg-slate-900/80">
+            <div
+              className="h-full bg-cyan-400 shadow-[0_0_10px_0_rgba(34,211,238,0.8)] transition-[width] duration-200 ease-linear"
+              style={{
+                width: `${progress && progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
+              }}
+            />
+            {/* sweep highlight, so the bar reads as active even between ticks */}
+            <div className="hud-scan pointer-events-none absolute inset-y-0 w-1/3" />
+          </div>
+        </div>
       )}
 
       {state === "error" && <p className="hud-mono mt-3 text-[11px] text-red-400">{error}</p>}
 
-      {state === "done" && result && (
+      {(isLive || (state === "done" && result)) && (
         <>
-          <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-500">
-            {result.iterations.toLocaleString()} iterations ·{" "}
-            {result.hasRealGrid ? (
-              <span className="text-cyan-500">grid from real qualifying</span>
-            ) : (
-              <span className="text-amber-400">grid simulated (no qualifying yet)</span>
-            )}
-          </p>
+          {result && state === "done" ? (
+            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-500">
+              {result.iterations.toLocaleString()} iterations ·{" "}
+              {result.hasRealGrid ? (
+                <span className="text-cyan-500">grid from real qualifying</span>
+              ) : (
+                <span className="text-amber-400">grid simulated (no qualifying yet)</span>
+              )}
+            </p>
+          ) : (
+            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-cyan-600">
+              live estimate — converging
+            </p>
+          )}
 
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[620px] text-xs">
@@ -193,8 +257,15 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
                       <td className="py-1.5 pr-3">
                         <div className="flex items-center gap-2">
                           <div className="relative h-3 w-16 shrink-0 overflow-hidden bg-slate-900/60">
+                            {/* During a live run the width is transitioned
+                                rather than re-animated from zero, so the bar
+                                visibly grows and settles as estimates firm up. */}
                             <div
-                              className="hud-bar-fill h-full"
+                              className={
+                                isLive
+                                  ? "h-full transition-[width] duration-200 ease-out"
+                                  : "hud-bar-fill h-full"
+                              }
                               style={{
                                 width: `${Math.max(d.winPct * 100, d.winPct > 0 ? 2 : 0)}%`,
                                 backgroundColor: color,
