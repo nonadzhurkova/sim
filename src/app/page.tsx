@@ -4,6 +4,7 @@ import { checkFreshness } from "@/ingest/freshness";
 import { FreshnessBanner } from "@/components/freshness-banner";
 import { RaceList } from "@/components/race-list";
 import { StatTile } from "@/components/stat-tile";
+import { TitleOddsPanel } from "@/components/title-odds-panel";
 
 export default async function Home() {
   const season = await getLatestSeason();
@@ -32,6 +33,10 @@ export default async function Home() {
           value={currentRace ? `R${String(currentRace.round).padStart(2, "0")}` : "—"}
         />
         <StatTile label="Next Race" value={currentRace?.date ?? "—"} />
+      </div>
+
+      <div className="mt-6">
+        <TitleOddsPanel season={season} />
       </div>
 
       <div className="mt-6 max-w-3xl">
