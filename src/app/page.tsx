@@ -31,6 +31,8 @@ export default async function Home() {
         <StatTile
           label="Current Round"
           value={currentRace ? `R${String(currentRace.round).padStart(2, "0")}` : "—"}
+          sublabel={currentRace?.circuitName}
+          href={currentRace ? `/race/${currentRace.season}/${currentRace.round}` : undefined}
         />
         <StatTile label="Next Race" value={currentRace?.date ?? "—"} />
       </div>
