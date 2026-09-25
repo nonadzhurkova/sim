@@ -103,6 +103,14 @@ export async function buildSimContext(
   raceId: number,
   /** Overrides PACE_WEIGHTS; used by the backtest harness to calibrate them. */
   weightOverrides?: Partial<typeof PACE_WEIGHTS>,
+  /**
+   * Replaces driver_ratings.basePace per driver when provided — used by the
+   * backtest harness to A/B the Bayesian rating (src/ratings/bayesian) against
+   * the stored hand-tuned basePace without changing anything else about the
+   * pipeline (practice pace, car strength, track affinity, quali form all stay
+   * as-is either way).
+   */
+  basePaceOverride?: Map<number, number>,
 ): Promise<SimContext | null> {
   const weights = { ...PACE_WEIGHTS, ...weightOverrides };
   const [race] = await db
@@ -230,8 +238,9 @@ export async function buildSimContext(
     const qualiForm = qualiFormByDriver.get(r.driverId) ?? null;
     const raceCraft = raceCraftByDriver.get(r.driverId)?.value ?? null;
 
+    const basePace = basePaceOverride?.get(r.driverId) ?? r.basePace;
     const expectedPace = composePace([
-      { value: r.basePace, weight: weights.basePace },
+      { value: basePace, weight: weights.basePace },
       { value: r.practicePace, weight: weights.practicePace },
       { value: projection, weight: weights.racePaceProjection },
       { value: carStrength, weight: weights.carStrength },
@@ -254,7 +263,7 @@ export async function buildSimContext(
       qualiForm,
       raceCraft,
       signals: {
-        basePace: r.basePace != null,
+        basePace: basePace != null,
         practicePace: r.practicePace != null,
         racePaceProjection: projection != null,
         carStrength: carStrength != null,

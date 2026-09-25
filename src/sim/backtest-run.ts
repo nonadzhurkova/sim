@@ -1,18 +1,23 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-/** CLI: npm run backtest -- <season> [iterations] */
+/** CLI: npm run backtest -- <season> [iterations] [--model=bayesian] */
 async function main() {
   const { backtestSeason, attachWinnerNames } = await import("./backtest");
-  const [, , seasonArg, iterArg] = process.argv;
+  const args = process.argv.slice(2).filter((a) => !a.startsWith("--model="));
+  const modelArg = process.argv.find((a) => a.startsWith("--model="))?.split("=")[1];
+  const paceModel = modelArg === "bayesian" ? "bayesian" : "current";
+  const [seasonArg, iterArg] = args;
   const season = seasonArg ? parseInt(seasonArg, 10) : 2026;
   const iterations = iterArg ? parseInt(iterArg, 10) : 4000;
 
   const started = Date.now();
-  const summary = await attachWinnerNames(await backtestSeason(season, iterations));
+  const summary = await attachWinnerNames(await backtestSeason(season, iterations, undefined, paceModel));
   const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 
-  console.log(`\n=== BACKTEST ${season} — ${summary.races.length} races, ${iterations} iters each (${elapsed}s) ===\n`);
+  console.log(
+    `\n=== BACKTEST ${season} [model=${paceModel}] — ${summary.races.length} races, ${iterations} iters each (${elapsed}s) ===\n`,
+  );
   console.log("  RND  ACTUAL WINNER          MODEL RANK   P(win)   PODIUM HITS   MAE   RHO");
   for (const r of summary.races) {
     console.log(

@@ -3,6 +3,10 @@ import { races, raceResults } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, type ModelOverrides } from "./engine";
+import { computeBayesianSeasonRatings } from "@/ratings/bayesian/compute";
+
+/** Which pace model backs a backtest run — see the Bayesian model's own doc comment for why it exists. */
+export type PaceModel = "current" | "bayesian";
 
 /**
  * Backtesting harness: replays the model against races whose real result is
@@ -69,12 +73,21 @@ type ScorableRace = {
  * contexts across dozens of runs instead of re-querying the DB each time —
  * the queries dominate runtime, the simulation itself is fast.
  */
-export async function loadScorableRaces(season: number): Promise<ScorableRace[]> {
+export async function loadScorableRaces(
+  season: number,
+  paceModel: PaceModel = "current",
+): Promise<ScorableRace[]> {
   const seasonRaces = await db
     .select({ id: races.id, season: races.season, round: races.round })
     .from(races)
     .where(eq(races.season, season))
     .orderBy(asc(races.round));
+
+  // Computed once for the whole season, not per race: computeBayesianSeasonRatings
+  // already walks every race in order internally to get its own no-lookahead
+  // guarantee, so calling it per-race would redo that work N times over.
+  const bayesianByRace =
+    paceModel === "bayesian" ? await computeBayesianSeasonRatings(season) : null;
 
   const out: ScorableRace[] = [];
   for (const race of seasonRaces) {
@@ -88,7 +101,14 @@ export async function loadScorableRaces(season: number): Promise<ScorableRace[]>
       .where(eq(raceResults.raceId, race.id));
     // Only races that actually happened can be scored.
     if (actual.length === 0) continue;
-    const ctx = await buildSimContext(race.id);
+    const basePaceOverride = bayesianByRace
+      ? new Map(
+          [...bayesianByRace.get(race.id) ?? []]
+            .filter(([, r]) => r.sampleSize > 0)
+            .map(([driverId, r]) => [driverId, r.pace] as const),
+        )
+      : undefined;
+    const ctx = await buildSimContext(race.id, undefined, basePaceOverride);
     if (!ctx) continue;
     out.push({ race, ctx, actual });
   }
@@ -99,8 +119,9 @@ export async function backtestSeason(
   season: number,
   iterations = 4000,
   overrides?: ModelOverrides,
+  paceModel: PaceModel = "current",
 ): Promise<BacktestSummary> {
-  return scoreRaces(await loadScorableRaces(season), iterations, overrides);
+  return scoreRaces(await loadScorableRaces(season, paceModel), iterations, overrides);
 }
 
 export function scoreRaces(
