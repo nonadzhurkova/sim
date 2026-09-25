@@ -7,7 +7,7 @@ import { ImportButton } from "@/components/import-button";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
 import { RatingsPanel } from "@/components/ratings-panel";
-import { PredictionStub } from "@/components/prediction-stub";
+import { PredictionPanel } from "@/components/prediction-panel";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
 import { CarPerformancePanel } from "@/components/car-performance-panel";
@@ -39,8 +39,6 @@ export default async function RacePage({
     getCarPerformance(season, race.id),
   ]);
 
-  const hasRaceResult = sessionPace.r != null && sessionPace.r.length > 0;
-  const raceHasHappened = new Date(race.date) <= new Date();
   const hasPracticeData = sessionPace.fp1 != null || sessionPace.fp2 != null || sessionPace.fp3 != null;
 
   return (
@@ -91,11 +89,13 @@ export default async function RacePage({
         </div>
       </section>
 
-      {!raceHasHappened && !hasRaceResult && (
-        <section className="mt-8">
-          <PredictionStub />
-        </section>
-      )}
+      {/* Shown for every race, not just upcoming ones: running the model
+          against a race whose result is already known is how the prediction
+          gets validated, so hiding it for past races would remove the only
+          way to judge whether it works. */}
+      <section className="mt-8">
+        <PredictionPanel raceId={race.id} />
+      </section>
 
       {comparison && (
         <section className="mt-8">

@@ -12,7 +12,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx src/ingest/run.ts",
-    "ratings": "tsx src/ratings/run.ts"
+    "ratings": "tsx src/ratings/run.ts",
+    "simulate": "tsx src/sim/run.ts",
+    "backtest": "tsx src/sim/backtest-run.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

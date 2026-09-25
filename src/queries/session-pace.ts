@@ -5,6 +5,21 @@ import { getDriverTeamsAsOf } from "./driver-teams";
 
 export type SessionType = "fp1" | "fp2" | "fp3" | "q" | "r";
 
+/**
+ * A lap below this fraction of the session's median lap time is treated as a
+ * broken timing record, not a real lap. Generous enough to keep a genuine
+ * qualifying lap on a session whose median is inflated by in/out laps and
+ * long-run fuel loads, while still catching the badly-truncated records that
+ * appear in the ingested data.
+ */
+const IMPLAUSIBLE_LAP_THRESHOLD = 0.8;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 export type DriverSessionPace = {
   driverId: number;
   driverName: string;
@@ -37,9 +52,23 @@ export async function getSessionPaceRanking(
     .from(laps)
     .where(and(eq(laps.sessionId, session.id), eq(laps.isPitInOut, false)));
 
+  // Discard impossible lap records before ranking. Ingested timing data
+  // contains partial laps (a timing loop catching only part of the circuit —
+  // e.g. a 60.4s "lap" at a ~90s track) which would otherwise be shown as a
+  // driver's session best and become the whole session's reference time.
+  // The session's median lap is a robust estimate of the real lap length, so
+  // anything far below it is a broken record rather than a fast lap.
+  const allDurations = sessionLaps
+    .map((l) => l.lapDuration)
+    .filter((d): d is number => d != null);
+  if (allDurations.length === 0) return [];
+  const sessionMedian = median(allDurations);
+  const minPlausibleLap = sessionMedian * IMPLAUSIBLE_LAP_THRESHOLD;
+
   const bestByDriver = new Map<number, number>();
   for (const lap of sessionLaps) {
     if (lap.lapDuration == null) continue;
+    if (lap.lapDuration < minPlausibleLap) continue;
     const current = bestByDriver.get(lap.driverId);
     if (current == null || lap.lapDuration < current) {
       bestByDriver.set(lap.driverId, lap.lapDuration);

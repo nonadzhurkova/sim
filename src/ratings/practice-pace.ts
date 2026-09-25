@@ -9,6 +9,40 @@ const FP_BASE_WEIGHTS: Record<"fp1" | "fp2" | "fp3", number> = {
 };
 
 const OUT_LAP_THRESHOLD = 1.07; // F1's 107% rule, applied per-driver-per-session-per-compound
+/**
+ * Second 107%-style gate, applied against the *field's* median on a compound
+ * rather than the driver's own best. OUT_LAP_THRESHOLD alone can't catch a
+ * driver whose every lap on a compound was slow — an aborted run, or a
+ * garage-to-garage in/out pair the pit flag missed — because such a driver's
+ * "best" is itself the outlier, so everything sits within 107% of it. Those
+ * laps then get differenced against the field median and produce absurd
+ * gaps (observed in real ingested data: up to +182s). A driver more than
+ * this far off the field's median on a compound is not showing pace, so the
+ * compound is dropped for them rather than allowed to poison the average.
+ */
+const FIELD_OUTLIER_THRESHOLD = 1.07;
+/**
+ * Lower bound of the same gate. A lap materially *faster* than the whole
+ * field's median is not a great lap, it's a bad timing record — an aborted
+ * or partial lap where the timing loop caught only part of the circuit
+ * (observed in real ingested data: a 60.4s "lap" at a ~90s circuit, which
+ * became that driver's best and produced a -14.9s field-relative pace).
+ * No car is 10% faster than the field median over a single lap.
+ */
+const FIELD_TOO_FAST_THRESHOLD = 0.9;
+/**
+ * Long-run ("race simulation") detection thresholds.
+ *
+ * These are strict on purpose, and were confirmed empirically: loosening
+ * them (run=3, tolerance=2%, slowdown=2%) detects long runs in far more
+ * stints, but made predictions much *worse* — backtest top-1 accuracy fell
+ * from 64% to 21% and log loss rose from 1.44 to 4.50 across the 2026
+ * season. The reason is that these thresholds gate what counts as a lap to
+ * *discard* from qualifying pace: loosening them starts swallowing genuine
+ * push laps, so a driver's "best clean lap" becomes some slower leftover and
+ * the whole qualifying-pace signal degrades. Detecting fewer long runs is
+ * the safer failure mode, so a tight tolerance stays.
+ */
 const RACE_SIM_RUN_LENGTH = 4; // consecutive similar-pace laps treated as a long run, not one-lap pace
 const RACE_SIM_TOLERANCE = 0.015; // 1.5% lap-to-lap variance counts as "similar pace"
 const RACE_SIM_MIN_SLOWDOWN = 1.03; // a cluster must be >=3% slower than the driver's best lap to count as a "run"
@@ -203,8 +237,16 @@ async function computeSessionCompoundRelativePace(sessionId: number): Promise<Ma
   for (const [, driverBests] of bestByCompound) {
     if (driverBests.size === 0) continue;
     const fieldMedian = median([...driverBests.values()]);
-    const sampleWeight = driverBests.size;
-    for (const [driverId, best] of driverBests) {
+    // See FIELD_OUTLIER_THRESHOLD: drop drivers whose best on this compound
+    // is nowhere near the field's, rather than recording a nonsense gap.
+    const credible = [...driverBests].filter(
+      ([, best]) =>
+        best <= fieldMedian * FIELD_OUTLIER_THRESHOLD &&
+        best >= fieldMedian * FIELD_TOO_FAST_THRESHOLD,
+    );
+    if (credible.length === 0) continue;
+    const sampleWeight = credible.length;
+    for (const [driverId, best] of credible) {
       if (!compoundRelativePaces.has(driverId)) compoundRelativePaces.set(driverId, []);
       compoundRelativePaces.get(driverId)!.push({ pace: best - fieldMedian, weight: sampleWeight });
     }
@@ -346,8 +388,15 @@ async function computeSessionRaceSimRelativePace(
   for (const [, driverAvgs] of avgByCompound) {
     if (driverAvgs.size === 0) continue;
     const fieldMedian = median([...driverAvgs.values()]);
-    const sampleWeight = driverAvgs.size;
-    for (const [driverId, avg] of driverAvgs) {
+    // Same field-relative sanity gate as the qualifying-pace path.
+    const credible = [...driverAvgs].filter(
+      ([, avg]) =>
+        avg <= fieldMedian * FIELD_OUTLIER_THRESHOLD &&
+        avg >= fieldMedian * FIELD_TOO_FAST_THRESHOLD,
+    );
+    if (credible.length === 0) continue;
+    const sampleWeight = credible.length;
+    for (const [driverId, avg] of credible) {
       if (!compoundRelativePaces.has(driverId)) compoundRelativePaces.set(driverId, []);
       compoundRelativePaces.get(driverId)!.push({ pace: avg - fieldMedian, weight: sampleWeight });
     }
