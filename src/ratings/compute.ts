@@ -6,6 +6,7 @@ import { weightedAverage } from "./decay";
 import { computeDriverReliability, fetchAllResults } from "./reliability";
 import { computeTeamStrength } from "./team-strength";
 import { computeTrackAffinity } from "./track-affinity";
+import { computePracticePace } from "./practice-pace";
 import { qualifyingResults } from "@/db/schema";
 
 /**
@@ -72,6 +73,7 @@ export async function computeSeasonRatings(season: number) {
     const driverReliability = await computeDriverReliability(targetRace.id, driverIds, allResults);
     const teamStrength = await computeTeamStrength(targetRace.id, teamIds, priorRaces, racePaceByRace);
     const trackAffinity = await computeTrackAffinity(targetRace.id, driverIds, priorRaces, racePaceByRace);
+    const practicePace = await computePracticePace(targetRace.id);
 
     const driverRatingRows = driverIds
       .map((driverId) => ({
@@ -80,9 +82,15 @@ export async function computeSeasonRatings(season: number) {
         basePace: basePaceByDriver.get(driverId) ?? null,
         driverReliability: driverReliability.get(driverId) ?? null,
         trackAffinity: trackAffinity.get(driverId) ?? null,
-        practicePace: null as number | null, // Phase 3b
+        practicePace: practicePace.get(driverId) ?? null,
       }))
-      .filter((r) => r.basePace != null || r.driverReliability != null || r.trackAffinity != null);
+      .filter(
+        (r) =>
+          r.basePace != null ||
+          r.driverReliability != null ||
+          r.trackAffinity != null ||
+          r.practicePace != null,
+      );
 
     if (driverRatingRows.length > 0) {
       await db
@@ -94,6 +102,7 @@ export async function computeSeasonRatings(season: number) {
             basePace: sql`excluded.base_pace`,
             driverReliability: sql`excluded.driver_reliability`,
             trackAffinity: sql`excluded.track_affinity`,
+            practicePace: sql`excluded.practice_pace`,
             computedAt: new Date(),
           },
         });
