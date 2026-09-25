@@ -101,6 +101,21 @@ async function checkOpenF1Freshness(
     .where(eq(races.season, season));
   const storedSessionCount = Number(count);
 
+  // Race dates for this season, so upstream sessions can be checked against
+  // the same 3-day matching window ingestSeasonSessions itself uses. Without
+  // this, an OpenF1 session with no counterpart in our race calendar (the
+  // two calendars occasionally disagree — 2026 OpenF1 lists a Jeddah weekend
+  // that Jolpica's calendar simply doesn't have) is counted as "available to
+  // import" forever, since nothing will ever match it and ingest it.
+  const raceDates = (
+    await db.select({ date: races.date }).from(races).where(eq(races.season, season))
+  ).map((r) => new Date(r.date).getTime());
+  const RACE_WEEKEND_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+  const hasMatchingRace = (sessionDateIso: string): boolean => {
+    const t = new Date(sessionDateIso).getTime();
+    return raceDates.some((raceTime) => Math.abs(raceTime - t) <= RACE_WEEKEND_WINDOW_MS);
+  };
+
   try {
     const res = await fetch(`${OPENF1_BASE_URL}/sessions?year=${season}`);
     const data = await res.json();
@@ -132,7 +147,8 @@ async function checkOpenF1Freshness(
     ).filter(
       (s) =>
         s.session_name in SESSION_TYPE_MAP &&
-        new Date(s.date_start).getTime() < now - GRACE_MS,
+        new Date(s.date_start).getTime() < now - GRACE_MS &&
+        hasMatchingRace(s.date_start),
     ).length;
     return {
       upstreamSessionCount,
