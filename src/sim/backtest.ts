@@ -1,12 +1,20 @@
 import { db } from "@/db";
-import { races, raceResults } from "@/db/schema";
+import { races, raceResults, driverRatings } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, type ModelOverrides } from "./engine";
 import { computeBayesianSeasonRatings } from "@/ratings/bayesian/compute";
 
-/** Which pace model backs a backtest run — see the Bayesian model's own doc comment for why it exists. */
-export type PaceModel = "current" | "bayesian";
+/**
+ * Which pace model backs a backtest run — see the Bayesian model's own doc
+ * comment for why it exists. "ensemble" blends the hand-tuned basePace with
+ * the Bayesian estimate per driver per race, rather than picking one or the
+ * other; see EnsembleWeight below.
+ */
+export type PaceModel = "current" | "bayesian" | "ensemble";
+
+/** Weight on the hand-tuned basePace in "ensemble" mode; (1 - ensembleWeight) goes to the Bayesian estimate. Ignored for other pace models. */
+export const DEFAULT_ENSEMBLE_WEIGHT = 0.5;
 
 /**
  * Backtesting harness: replays the model against races whose real result is
@@ -78,6 +86,7 @@ type ScorableRace = {
 export async function loadScorableRaces(
   season: number,
   paceModel: PaceModel = "current",
+  ensembleWeight: number = DEFAULT_ENSEMBLE_WEIGHT,
 ): Promise<ScorableRace[]> {
   const seasonRaces = await db
     .select({ id: races.id, season: races.season, round: races.round })
@@ -89,7 +98,9 @@ export async function loadScorableRaces(
   // already walks every race in order internally to get its own no-lookahead
   // guarantee, so calling it per-race would redo that work N times over.
   const bayesianByRace =
-    paceModel === "bayesian" ? await computeBayesianSeasonRatings(season) : null;
+    paceModel === "bayesian" || paceModel === "ensemble"
+      ? await computeBayesianSeasonRatings(season)
+      : null;
 
   const out: ScorableRace[] = [];
   for (const race of seasonRaces) {
@@ -103,13 +114,38 @@ export async function loadScorableRaces(
       .where(eq(raceResults.raceId, race.id));
     // Only races that actually happened can be scored.
     if (actual.length === 0) continue;
-    const basePaceOverride = bayesianByRace
-      ? new Map(
-          [...bayesianByRace.get(race.id) ?? []]
-            .filter(([, r]) => r.sampleSize > 0)
-            .map(([driverId, r]) => [driverId, r.pace] as const),
+
+    let basePaceOverride: Map<number, number> | undefined;
+    if (paceModel === "bayesian") {
+      basePaceOverride = new Map(
+        [...bayesianByRace!.get(race.id) ?? []]
+          .filter(([, r]) => r.sampleSize > 0)
+          .map(([driverId, r]) => [driverId, r.pace] as const),
+      );
+    } else if (paceModel === "ensemble") {
+      // Blend at the rating level (handTuned * w + bayesian * (1-w)) before
+      // the one simulation runs, rather than running two full simulations
+      // and averaging outputs — see project memory on why blending here.
+      const handTunedByDriver = new Map(
+        (
+          await db
+            .select({ driverId: driverRatings.driverId, basePace: driverRatings.basePace })
+            .from(driverRatings)
+            .where(eq(driverRatings.raceId, race.id))
         )
-      : undefined;
+          .filter((r) => r.basePace != null)
+          .map((r) => [r.driverId, r.basePace as number] as const),
+      );
+      basePaceOverride = new Map(
+        [...bayesianByRace!.get(race.id) ?? []]
+          .filter(([driverId, r]) => r.sampleSize > 0 && handTunedByDriver.has(driverId))
+          .map(([driverId, r]) => [
+            driverId,
+            ensembleWeight * handTunedByDriver.get(driverId)! + (1 - ensembleWeight) * r.pace,
+          ] as const),
+      );
+    }
+
     const ctx = await buildSimContext(race.id, undefined, basePaceOverride);
     if (!ctx) continue;
     out.push({ race, ctx, actual });
@@ -122,8 +158,9 @@ export async function backtestSeason(
   iterations = 4000,
   overrides?: ModelOverrides,
   paceModel: PaceModel = "current",
+  ensembleWeight: number = DEFAULT_ENSEMBLE_WEIGHT,
 ): Promise<BacktestSummary> {
-  return scoreRaces(await loadScorableRaces(season, paceModel), iterations, overrides);
+  return scoreRaces(await loadScorableRaces(season, paceModel, ensembleWeight), iterations, overrides);
 }
 
 export function scoreRaces(
