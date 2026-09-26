@@ -188,12 +188,20 @@ noted:
 - Jointly fitting all pace weights via a Plackett-Luce ranking likelihood
   instead of one-at-a-time sweeps — improved two seasons but regressed the
   third by a similar margin, consistent with overfitting on ~50 races.
+- An XGBoost finish-position regressor + DNF classifier (grid position,
+  qualifying gap-to-pole, driver/car reliability, plus the 7 signals above)
+  fed into the same Monte Carlo engine — the most decisive rejection of the
+  five: 75-79% top-1 accuracy on its training seasons, but log loss on the
+  untouched 2024 holdout collapsed to 4.9 (worse than random guessing),
+  a severe overfit from ~800-900 training rows.
 
 The recurring finding: with ~14-24 scorable races per season, more
 statistically sophisticated models consistently overfit rather than out-predict
 the simpler hand-tuned weights — so far, only better-calibrating the existing
 model's confidence (not building a fancier one) has produced a validated
-improvement.
+improvement. Five separate attempts at a fancier pace/outcome model have now
+failed this same way; treat further proposals in this family with strong
+prior skepticism.
 
 ## Development
 
