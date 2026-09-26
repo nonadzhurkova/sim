@@ -203,6 +203,26 @@ improvement. Five separate attempts at a fancier pace/outcome model have now
 failed this same way; treat further proposals in this family with strong
 prior skepticism.
 
+**Checked for new signal, none found (existing signals already capture what
+matters, or the effect isn't real):**
+
+- Pit-stop count/timing vs. finishing-position swing — correlation ~0.08,
+  negligible.
+- Tyre degradation rate (fuel-burn- and track-evolution-corrected) — real
+  and physically sensible (soft tyres degrade faster than hard, as expected),
+  but statistically indistinguishable between race winners and the rest of
+  the field (t-stat 0.33).
+- Team-level strategy skill (does a team's stop-count tendency predict
+  gaining positions beyond the field) — an apparent team ranking turned out
+  to be a grid-position artifact (backmarker teams simply have more room to
+  gain places); adjusting for grid position just re-surfaces the existing
+  car-strength pecking order, not a new signal.
+
+**Not yet resolved:** weather/track evolution. `sessions.weather` (dry/wet)
+is already ingested from OpenF1, but only ~13 wet races exist across all
+three seasons, and using it for a *future* race needs a forecast source,
+which isn't ingested yet. Paused before a backtest check was run.
+
 ## Development
 
 ```
