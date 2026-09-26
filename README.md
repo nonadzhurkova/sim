@@ -218,10 +218,20 @@ matters, or the effect isn't real):**
   gain places); adjusting for grid position just re-surfaces the existing
   car-strength pecking order, not a new signal.
 
-**Not yet resolved:** weather/track evolution. `sessions.weather` (dry/wet)
-is already ingested from OpenF1, but only ~13 wet races exist across all
-three seasons, and using it for a *future* race needs a forecast source,
-which isn't ingested yet. Paused before a backtest check was run.
+**A real gap found, not yet fixed:** splitting the current model's backtest
+by recorded race-day weather (`sessions.weather`, already ingested from
+OpenF1) shows it is substantially worse and badly overconfident on wet
+races — top-1 accuracy 30.8% (wet) vs. 55.1% (dry), log loss 2.05 vs. 1.20,
+and in its most-confident (60-100%) probability band, wet races only win
+37.5% of the time against a stated 72.5%. This is the clearest real finding
+of the whole session — but only 13 wet races exist across all three
+ingested seasons, so fitting (or even coarsely guessing) a specific
+wet-weather noise/grid-penalty adjustment now risks tuning to that small
+sample rather than a real effect, the same failure mode that sank the
+Plackett-Luce and XGBoost attempts above. Revisit once more wet races are
+ingested. Using this for *future*-race predictions (not just backtesting
+known-wet past races) would also need a weather-forecast data source, which
+isn't ingested yet.
 
 ## Development
 
