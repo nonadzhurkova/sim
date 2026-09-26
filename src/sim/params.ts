@@ -45,7 +45,54 @@ export const PACE_WEIGHTS = {
    * disagree on how far to push it.
    */
   qualiForm: 0.6,
+  /**
+   * Recent race form (field-relative race pace over the last few races),
+   * isolated from basePace the same way qualiForm isolates recent qualifying
+   * skill — see race-form.ts. Calibrated against both seasons: log loss
+   * improves monotonically with weight (2026: 1.502->1.450 at 1.0, 2025:
+   * 1.174->1.092 at 1.5) but rank correlation degrades as weight rises
+   * (2025: 0.772->0.758 by 1.5), the same log-loss-vs-rank-correlation
+   * tradeoff as trackAffinity above. 0.6 captures most of the log-loss gain
+   * on both seasons while the rank-correlation cost is still minimal.
+   */
+  raceForm: 0.6,
 } as const;
+
+/**
+ * How much a driver's own Kalman-filter pace-uncertainty (driver_ratings.
+ * pace_uncertainty, from src/ratings/bayesian) widens their per-iteration
+ * pace noise, on top of the fixed PACE_NOISE_STD_DEV every driver already
+ * gets. A rookie or a driver with little recent data has high variance, so
+ * their simulated pace swings more iteration to iteration; an established,
+ * consistent driver's variance is small and barely changes their noise.
+ *
+ * Combined as independent variances: effective variance = PACE_NOISE_STD_DEV^2
+ * + PACE_UNCERTAINTY_WEIGHT * paceUncertainty. This is a distinct claim from
+ * the (rejected) Bayesian pace *mean* — only the uncertainty output is
+ * reused here, see compute.ts — but it was swept against the 2026 backtest
+ * (weights 0.1-2.0) and rejected too: log loss got monotonically worse
+ * (1.462->1.517) with no sweet spot, and rank correlation didn't improve
+ * either. Same failure mode as the Bayesian mean: sample-size-aware
+ * uncertainty needs more races per driver than this dataset has to add
+ * signal rather than noise. Kept at 0, machinery left in place.
+ */
+export const PACE_UNCERTAINTY_WEIGHT = 0;
+
+/**
+ * Platt-scaling calibration applied to raw win probabilities (src/sim/
+ * calibration.ts): calibrated = sigmoid(a * logit(raw) + b). A purely
+ * monotonic transform — it cannot change which driver the model picks as
+ * favourite, only how honest the reported percentage is.
+ *
+ * Fitted by `npm run calibrate -- 2024,2025,2026 2024` (1265 pooled
+ * per-driver win-probability points across all three ingested seasons).
+ * Validated out-of-sample first: fit on 2025+2026 alone, checked cold
+ * against the untouched 2024 holdout, mean log loss on that holdout dropped
+ * 1.599->1.449 (~9.4%). a=0.67 (<1) confirms the raw model was genuinely overconfident,
+ * most visibly in the 20-35% and 60-100% probability bands. Once validated,
+ * refit on all three seasons combined for the final production values below.
+ */
+export const WIN_PROBABILITY_CALIBRATION = { a: 0.6698, b: -0.3283 };
 
 /**
  * Per-lap pace noise (seconds, std dev) applied per driver per iteration.

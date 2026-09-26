@@ -14,6 +14,7 @@ import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
 import { computeRacePaceProjection } from "@/ratings/practice-pace";
 import { computeQualiForm } from "@/ratings/quali-form";
+import { computeRaceForm } from "@/ratings/race-form";
 import { computeRaceCraft } from "@/ratings/race-craft";
 import {
   PACE_WEIGHTS,
@@ -42,9 +43,14 @@ export type SimEntrant = {
     carStrength: boolean;
     trackAffinity: boolean;
     qualiForm: boolean;
+    raceForm: boolean;
   };
   /** Recent qualifying form, used to seed a simulated grid when qualifying hasn't happened. */
   qualiForm: number | null;
+  /** Recent race form — field-relative race pace over the driver's last few races. */
+  raceForm: number | null;
+  /** Kalman posterior variance on the driver's pace estimate — shrinks with sample size. Scales per-iteration pace noise. */
+  paceUncertainty: number | null;
   /**
    * Positions this driver typically beats their grid slot by. Applied as an
    * effective grid offset rather than a pace change: it models converting a
@@ -135,6 +141,7 @@ export async function buildSimContext(
         driverReliability: driverRatings.driverReliability,
         trackAffinity: driverRatings.trackAffinity,
         practicePace: driverRatings.practicePace,
+        paceUncertainty: driverRatings.paceUncertainty,
       })
       .from(driverRatings)
       .innerJoin(drivers, eq(driverRatings.driverId, drivers.id))
@@ -219,9 +226,10 @@ export async function buildSimContext(
   if (fieldRatings.length === 0) return null;
 
   const fieldDriverIdList = fieldRatings.map((r) => r.driverId);
-  const [teamsByDriver, qualiFormByDriver, raceCraftByDriver] = await Promise.all([
+  const [teamsByDriver, qualiFormByDriver, raceFormByDriver, raceCraftByDriver] = await Promise.all([
     getDriverTeamsAsOf(raceId, fieldDriverIdList),
     computeQualiForm(raceId, fieldDriverIdList),
+    computeRaceForm(raceId, fieldDriverIdList),
     computeRaceCraft(race.season, race.round),
   ]);
   const carStrengthByTeam = new Map(
@@ -236,6 +244,7 @@ export async function buildSimContext(
     const carStrength = team ? carStrengthByTeam.get(team.teamId) ?? null : null;
     const projection = racePaceProjection.get(r.driverId)?.pace ?? null;
     const qualiForm = qualiFormByDriver.get(r.driverId) ?? null;
+    const raceForm = raceFormByDriver.get(r.driverId) ?? null;
     const raceCraft = raceCraftByDriver.get(r.driverId)?.value ?? null;
 
     const basePace = basePaceOverride?.get(r.driverId) ?? r.basePace;
@@ -246,6 +255,7 @@ export async function buildSimContext(
       { value: carStrength, weight: weights.carStrength },
       { value: r.trackAffinity, weight: weights.trackAffinity },
       { value: qualiForm, weight: weights.qualiForm },
+      { value: raceForm, weight: weights.raceForm },
     ]);
     // A driver with no pace signal at all can't be meaningfully simulated;
     // including them at an assumed pace would invent a result from nothing.
@@ -261,6 +271,8 @@ export async function buildSimContext(
       dnfRate: Math.min(MAX_DNF_RATE, Math.max(MIN_DNF_RATE, rawDnf)),
       gridPosition: gridByDriver.get(r.driverId) ?? null,
       qualiForm,
+      raceForm,
+      paceUncertainty: r.paceUncertainty,
       raceCraft,
       signals: {
         basePace: basePace != null,
@@ -269,6 +281,7 @@ export async function buildSimContext(
         carStrength: carStrength != null,
         trackAffinity: r.trackAffinity != null,
         qualiForm: qualiForm != null,
+        raceForm: raceForm != null,
       },
     });
   }

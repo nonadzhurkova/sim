@@ -3,10 +3,33 @@ import { simulationRuns, simulationResults } from "@/db/schema";
 import { eq, sql, desc } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, simulationIterator, type SimulationOutcome } from "./engine";
-import { DEFAULT_ITERATIONS } from "./params";
+import { DEFAULT_ITERATIONS, WIN_PROBABILITY_CALIBRATION } from "./params";
+import { applyCalibration } from "./calibration";
 
 /** How often (in iterations) partial results are flushed to the DB mid-run. */
 const PROGRESS_INTERVAL = 1000;
+
+/**
+ * Applies Platt-scaling calibration (see WIN_PROBABILITY_CALIBRATION) to a
+ * simulation outcome's win probabilities, right at the boundary where a
+ * prediction is stored or shown — not inside engine.ts itself, so the
+ * backtest harness keeps measuring the model's true raw output (recalibrating
+ * against already-calibrated numbers would be circular). A monotonic
+ * per-driver correction can't change who's the favourite, but applied
+ * independently per driver it no longer sums to 1 across the field, so it's
+ * renormalized back to a proper distribution afterward.
+ */
+function calibrateOutcome(outcome: SimulationOutcome): SimulationOutcome {
+  const calibratedRaw = outcome.drivers.map((d) => applyCalibration(d.winPct, WIN_PROBABILITY_CALIBRATION));
+  const sum = calibratedRaw.reduce((a, b) => a + b, 0);
+  return {
+    ...outcome,
+    drivers: outcome.drivers.map((d, i) => ({
+      ...d,
+      winPct: sum > 0 ? calibratedRaw[i] / sum : d.winPct,
+    })),
+  };
+}
 
 export type StoredSimulation = {
   runId: number;
@@ -60,12 +83,13 @@ export async function runAndStoreSimulation(
         // would mean blocking the whole run on a network round-trip every
         // interval. Errors are swallowed deliberately — a failed partial
         // write shouldn't abort a run whose final write is what matters.
-        lastFlush = persistResults(run.id, snapshot).catch(() => {});
+        lastFlush = persistResults(run.id, calibrateOutcome(snapshot)).catch(() => {});
       },
     });
 
+    const calibrated = calibrateOutcome(outcome);
     await lastFlush;
-    await persistResults(run.id, outcome);
+    await persistResults(run.id, calibrated);
     await db
       .update(simulationRuns)
       .set({ status: "completed", completedAt: new Date() })
@@ -74,13 +98,13 @@ export async function runAndStoreSimulation(
     return {
       runId: run.id,
       raceId,
-      iterations: outcome.iterations,
+      iterations: calibrated.iterations,
       status: "completed",
       startedAt: new Date(),
       completedAt: new Date(),
-      hasRealGrid: outcome.hasRealGrid,
-      gridIsProvisional: outcome.gridIsProvisional,
-      drivers: outcome.drivers,
+      hasRealGrid: calibrated.hasRealGrid,
+      gridIsProvisional: calibrated.gridIsProvisional,
+      drivers: calibrated.drivers,
     };
   } catch (err) {
     await db
@@ -144,14 +168,14 @@ export async function* streamSimulation(
         type: "progress",
         completed: step.value.iterations,
         total: iterations,
-        drivers: step.value.drivers,
+        drivers: calibrateOutcome(step.value).drivers,
       };
       await new Promise((resolve) => setImmediate(resolve));
       step = gen.next();
     }
-    const outcome = step.value;
+    const calibrated = calibrateOutcome(step.value);
 
-    await persistResults(run.id, outcome);
+    await persistResults(run.id, calibrated);
     const completedAt = new Date();
     await db
       .update(simulationRuns)
@@ -163,13 +187,13 @@ export async function* streamSimulation(
       result: {
         runId: run.id,
         raceId,
-        iterations: outcome.iterations,
+        iterations: calibrated.iterations,
         status: "completed",
         startedAt,
         completedAt,
-        hasRealGrid: outcome.hasRealGrid,
-        gridIsProvisional: outcome.gridIsProvisional,
-        drivers: outcome.drivers,
+        hasRealGrid: calibrated.hasRealGrid,
+        gridIsProvisional: calibrated.gridIsProvisional,
+        drivers: calibrated.drivers,
       },
     };
   } catch (err) {

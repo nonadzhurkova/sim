@@ -14,7 +14,8 @@
     "ingest": "tsx src/ingest/run.ts",
     "ratings": "tsx src/ratings/run.ts",
     "simulate": "tsx src/sim/run.ts",
-    "backtest": "tsx src/sim/backtest-run.ts"
+    "backtest": "tsx src/sim/backtest-run.ts",
+    "calibrate": "tsx src/sim/calibrate-run.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -195,6 +195,11 @@ export const driverRatings = pgTable(
     driverReliability: real("driver_reliability"), // DNF rate, driver-caused only (crashes, spins)
     trackAffinity: real("track_affinity"),
     practicePace: real("practice_pace"),
+    // Kalman-filter posterior variance from src/ratings/bayesian (variance
+    // of the *estimate*, shrinking with sample size — not the Bayesian pace
+    // mean itself, which stays unused; only its uncertainty output is
+    // adopted). Feeds per-driver, per-iteration pace-noise scaling.
+    paceUncertainty: real("pace_uncertainty"),
     computedAt: timestamp("computed_at").defaultNow(),
   },
   (t) => [unique().on(t.driverId, t.raceId)],

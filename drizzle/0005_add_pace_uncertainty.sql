@@ -1,0 +1,1 @@
+ALTER TABLE "driver_ratings" ADD COLUMN "pace_uncertainty" real;

@@ -56,6 +56,8 @@ export type BacktestSummary = {
   meanAbsPositionError: number;
   meanRankCorrelation: number;
   calibration: CalibrationBucket[];
+  /** Every (predicted win probability, did they actually win) pair behind `calibration` — raw, unbinned, for fitting a calibration curve against. */
+  calibrationPoints: { p: number; won: boolean }[];
 };
 
 /** Probability floor so a 0% pick that wins doesn't score -log(0) = Infinity. */
@@ -217,6 +219,7 @@ export function scoreRaces(
     meanAbsPositionError: mean(withErr.map((r) => r.meanAbsPositionError!)),
     meanRankCorrelation: mean(withCorr.map((r) => r.rankCorrelation!)),
     calibration: buildCalibration(calibrationPoints),
+    calibrationPoints,
   };
 }
 
@@ -226,7 +229,7 @@ export function scoreRaces(
  * in every band — the plan's "a driver rated 15% to win should win ~15% of
  * the time" test.
  */
-function buildCalibration(points: { p: number; won: boolean }[]): CalibrationBucket[] {
+export function buildCalibration(points: { p: number; won: boolean }[]): CalibrationBucket[] {
   const bands: [number, number, string][] = [
     [0, 0.02, "0-2%"],
     [0.02, 0.05, "2-5%"],

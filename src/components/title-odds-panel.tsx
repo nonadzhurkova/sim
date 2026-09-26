@@ -134,31 +134,22 @@ function OddsRow({
 function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
   if (projection.raceOutlooks.length === 0) return null;
 
-  // When the same driver tops every remaining race, that is the model
-  // reporting a real gap in its base-pace rating, not track-by-track
-  // variation — none of these races have a real grid yet, so each one is
-  // seeded from the same season-long pace number, and track-specific form
-  // (trackAffinity) is deliberately weighted low because pushing it higher
-  // measurably hurt the rest of the field's predicted order in backtesting
-  // (see params.ts). Worth saying plainly rather than let the repetition
-  // look like a bug.
-  const distinctFavourites = new Set(projection.raceOutlooks.map((o) => o.favouriteDriverId));
-  const oneNameDominates = distinctFavourites.size === 1 && projection.raceOutlooks.length > 2;
+  // None of these races have a real grid yet, so each is seeded from the
+  // same season-long pace number rather than track-specific form — worth a
+  // quiet note rather than a loud warning, since the top-3 view already
+  // shows the real spread of contenders instead of one repeated name.
+  const noRealGridYet = projection.raceOutlooks.length > 0;
 
   return (
     <HudPanel title="Race-by-Race Predictions">
-      {oneNameDominates && (
-        <p className="hud-mono mb-3 text-[10px] leading-relaxed text-amber-400">
-          ⚠ SAME FAVOURITE AT EVERY REMAINING RACE: NONE HAVE A REAL GRID YET, SO EACH IS
-          SEEDED FROM THE SAME SEASON-LONG PACE RATING RATHER THAN TRACK-SPECIFIC FORM. THIS
-          WILL SHARPEN AND DIVERGE ONCE REAL QUALIFYING RESULTS COME IN FOR EACH WEEKEND.
+      {noRealGridYet && (
+        <p className="hud-mono mb-3 text-[10px] leading-relaxed text-slate-600">
+          NONE OF THESE RACES HAVE A REAL GRID YET, SO ODDS ARE SEEDED FROM SEASON-LONG PACE
+          RATHER THAN TRACK-SPECIFIC FORM. THEY WILL SHARPEN AS QUALIFYING RESULTS COME IN.
         </p>
       )}
       <div className="flex flex-col gap-1.5">
         {projection.raceOutlooks.map((o) => {
-          const driverColor = getTeamColor(
-            projection.drivers.find((d) => d.id === o.favouriteDriverId)?.teamName ?? null,
-          );
           const teamColor = getTeamColor(o.favouriteTeamName);
           return (
             <div
@@ -170,13 +161,22 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
               </span>
               <span className="w-40 shrink-0 truncate text-slate-300">{o.circuitName}</span>
               <span className="text-slate-500">—</span>
-              <span className="font-semibold" style={{ color: driverColor }}>
-                {o.favouriteDriverName}
-              </span>
-              <span className="text-slate-500">favoured to win</span>
-              <span className="hud-mono text-[11px] text-cyan-300">
-                ({pct(o.favouriteWinPct)}%)
-              </span>
+              {o.contenders.map((c, i) => {
+                const driverColor = getTeamColor(
+                  projection.drivers.find((d) => d.id === c.driverId)?.teamName ?? null,
+                );
+                return (
+                  <span key={c.driverId} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-slate-600">·</span>}
+                    <span className="font-semibold" style={{ color: driverColor }}>
+                      {c.driverName}
+                    </span>
+                    <span className="hud-mono text-[11px] text-cyan-300">
+                      ({pct(c.winPct)}%)
+                    </span>
+                  </span>
+                );
+              })}
               <span className="text-slate-600">·</span>
               <span className="font-semibold" style={{ color: teamColor }}>
                 {o.favouriteTeamName}
@@ -190,6 +190,7 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
         })}
       </div>
       <p className="hud-mono mt-3 text-[9px] text-slate-600">
+        DRIVERS SHOWN ARE THE TOP 3 MOST LIKELY RACE WINNERS BY SIMULATED WIN SHARE.
         &quot;PROJECTED TOP TEAM&quot; IS THE SHARE OF THAT RACE&apos;S POINTS THE TEAM IS
         EXPECTED TO SCORE, NOT A WIN PROBABILITY — A TEAM CAN LEAD ON POINTS WITH BOTH CARS
         SCORING WITHOUT EITHER ONE WINNING.
@@ -337,7 +338,9 @@ export function TitleOddsPanel({ season }: { season: number }) {
   return (
     <div className="flex flex-col gap-4">
     <HudPanel
-      title={`${projection.season} Championship Prediction — ${projection.racesRemaining} races left`}
+      title={`${projection.season} Championship Prediction — ${projection.racesRemaining} races ${
+        projection.raceOutlooksComplete ? "left" : "processed"
+      }`}
     >
       {header}
 

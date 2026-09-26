@@ -12,6 +12,7 @@ import {
   SAFETY_CAR_COMPRESSION,
   SAFETY_CAR_SHUFFLE_FACTOR,
   POINTS_BY_POSITION,
+  PACE_UNCERTAINTY_WEIGHT,
 } from "./params";
 
 export type DriverOutcome = {
@@ -55,6 +56,7 @@ export type ModelOverrides = {
   safetyCarProbability?: number;
   safetyCarCompression?: number;
   safetyCarShuffleFactor?: number;
+  paceUncertaintyWeight?: number;
 };
 
 /** Running tallies for one driver across all iterations. */
@@ -127,6 +129,14 @@ export function* simulationIterator(
 
   const paceNoise = overrides.paceNoiseStdDev ?? PACE_NOISE_STD_DEV;
   const qualiNoise = overrides.qualiNoiseStdDev ?? QUALI_NOISE_STD_DEV;
+  const uncertaintyWeight = overrides.paceUncertaintyWeight ?? PACE_UNCERTAINTY_WEIGHT;
+  // Per-driver pace-noise std dev, widened by how uncertain that driver's own
+  // rating is (Kalman variance, shrinks with sample size) — computed once per
+  // driver rather than per iteration, since paceUncertainty is fixed for the
+  // whole race. Combined as independent variances (see PACE_UNCERTAINTY_WEIGHT).
+  const paceNoiseByDriver = entrants.map((e) =>
+    Math.sqrt(paceNoise * paceNoise + uncertaintyWeight * (e.paceUncertainty ?? 0)),
+  );
   const scCompression = overrides.safetyCarCompression ?? SAFETY_CAR_COMPRESSION;
   const raceCraftWeight = overrides.raceCraftWeight ?? RACE_CRAFT_WEIGHT;
   const gridPenalty =
@@ -187,7 +197,7 @@ export function* simulationIterator(
     for (let i = 0; i < n; i++) {
       const e = entrants[i];
       retired[i] = sampleBernoulli(rng, e.dnfRate);
-      const paceRoll = e.expectedPace + sampleNormal(rng, 0, paceNoise);
+      const paceRoll = e.expectedPace + sampleNormal(rng, 0, paceNoiseByDriver[i]);
       // Grid position is a real handicap: a fast car starting 15th loses time
       // stuck behind slower cars, and how much depends on the circuit.
       // Race craft shifts the effective slot: a driver who reliably beats

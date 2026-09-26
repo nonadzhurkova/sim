@@ -15,7 +15,9 @@ import {
   SAFETY_CAR_COMPRESSION,
   SAFETY_CAR_SHUFFLE_FACTOR,
   POINTS_BY_POSITION,
+  WIN_PROBABILITY_CALIBRATION,
 } from "./params";
+import { applyCalibration } from "./calibration";
 
 /**
  * Championship prediction: simulates every remaining race of the season and
@@ -59,10 +61,8 @@ export type RaceOutlook = {
   raceId: number;
   round: number;
   circuitName: string;
-  /** Most likely race winner and their win probability in that one race. */
-  favouriteDriverId: number;
-  favouriteDriverName: string;
-  favouriteWinPct: number;
+  /** Top 3 most likely race winners, ranked, with each one's win probability in that one race. */
+  contenders: { driverId: number; driverName: string; winPct: number }[];
   /** Team projected to score the most points at this round. */
   favouriteTeamId: number;
   favouriteTeamName: string;
@@ -72,7 +72,15 @@ export type RaceOutlook = {
 export type SeasonProjection = {
   season: number;
   iterations: number;
+  /**
+   * Races folded into the projection so far — grows as contexts load, so
+   * mid-stream this is "races processed," not the final remaining calendar.
+   * Once `raceOutlooksComplete` is true (or the stream is done) this equals
+   * the true number of races left.
+   */
   racesRemaining: number;
+  /** True once every remaining race has been loaded into the projection. */
+  raceOutlooksComplete: boolean;
   roundsScored: number;
   drivers: TitleOdds[];
   teams: TitleOdds[];
@@ -189,6 +197,7 @@ export async function* streamSeasonProjection(
     season,
     iterations: 0,
     racesRemaining: 0,
+    raceOutlooksComplete: false,
     raceOutlooks: [],
     roundsScored: standings.roundsScored,
     complete: false,
@@ -279,6 +288,7 @@ export async function* streamSeasonProjection(
       season,
       iterations: 0,
       racesRemaining: 0,
+      raceOutlooksComplete: true,
       raceOutlooks: [],
       roundsScored: standings.roundsScored,
       complete: true,
@@ -528,10 +538,25 @@ export async function* streamSeasonProjection(
         const teamPointsAtRace = raceTeamPoints.get(ctx.raceId);
         if (!winnerHits || winnerHits.size === 0) return null;
 
-        const [favDriverId, favDriverHits] = [...winnerHits.entries()].sort(
-          (a, b) => b[1] - a[1],
-        )[0];
-        const favDriverMeta = driverMeta.get(favDriverId);
+        // Calibrate over the full field before slicing to the top 3 shown,
+        // so their percentages stay honest relative to the whole field's
+        // probability mass (same treatment as the single-race prediction —
+        // see run-simulation.ts's calibrateOutcome).
+        const fullField = [...winnerHits.entries()].map(([driverId, hits]) => ({
+          driverId,
+          rawWinPct: hits / safe,
+        }));
+        const calibratedRaw = fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION));
+        const calibratedSum = calibratedRaw.reduce((a, b) => a + b, 0);
+
+        const contenders = fullField
+          .map((f, i) => ({
+            driverId: f.driverId,
+            driverName: driverMeta.get(f.driverId)?.name ?? "Unknown",
+            winPct: calibratedSum > 0 ? calibratedRaw[i] / calibratedSum : f.rawWinPct,
+          }))
+          .sort((a, b) => b.winPct - a.winPct)
+          .slice(0, 3);
 
         let favTeamId = -1;
         let favTeamPoints = 0;
@@ -550,9 +575,7 @@ export async function* streamSeasonProjection(
           raceId: ctx.raceId,
           round: meta.round,
           circuitName: meta.circuitName,
-          favouriteDriverId: favDriverId,
-          favouriteDriverName: favDriverMeta?.name ?? "Unknown",
-          favouriteWinPct: favDriverHits / safe,
+          contenders,
           favouriteTeamId: favTeamId,
           favouriteTeamName: teamMeta.get(favTeamId)?.name ?? "Unknown",
           favouriteTeamPct: totalTeamPoints > 0 ? favTeamPoints / totalTeamPoints : 0,
@@ -567,6 +590,7 @@ export async function* streamSeasonProjection(
       // Reported as the number actually being simulated, which grows as
       // contexts load, so the header cannot claim more than it is modelling.
       racesRemaining: remaining.length,
+      raceOutlooksComplete: loadedUpTo >= pendingRaceIds.length,
       roundsScored: standings.roundsScored,
       complete: false,
       drivers: driverOdds,

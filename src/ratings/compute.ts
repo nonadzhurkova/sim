@@ -8,6 +8,7 @@ import { computeDriverReliability, fetchAllResults } from "./reliability";
 import { computeTeamStrength } from "./team-strength";
 import { computeTrackAffinity } from "./track-affinity";
 import { computePracticePace } from "./practice-pace";
+import { computeBayesianSeasonRatings } from "./bayesian/compute";
 import { qualifyingResults } from "@/db/schema";
 
 /**
@@ -28,6 +29,12 @@ export async function computeSeasonRatings(season: number, onProgress?: Progress
   const teamIds = allTeams.map((t) => t.id);
 
   const allResults = await fetchAllResults();
+
+  // Only the variance (uncertainty) output is used here — the Bayesian pace
+  // mean itself was A/B tested and rejected (see project memory), but its
+  // per-driver, sample-size-aware uncertainty is a genuinely separate signal:
+  // how much a driver's own rating should vary iteration to iteration.
+  const bayesianRatings = await computeBayesianSeasonRatings(season);
 
   // Precompute field-relative race pace once per race across all seasons
   // referenced (avoids recomputing per target race).
@@ -75,16 +82,21 @@ export async function computeSeasonRatings(season: number, onProgress?: Progress
     const teamStrength = await computeTeamStrength(targetRace.id, teamIds, priorRaces, racePaceByRace);
     const trackAffinity = await computeTrackAffinity(targetRace.id, driverIds, priorRaces, racePaceByRace);
     const practicePace = await computePracticePace(targetRace.id);
+    const bayesianForRace = bayesianRatings.get(targetRace.id);
 
     const driverRatingRows = driverIds
-      .map((driverId) => ({
-        driverId,
-        raceId: targetRace.id,
-        basePace: basePaceByDriver.get(driverId) ?? null,
-        driverReliability: driverReliability.get(driverId) ?? null,
-        trackAffinity: trackAffinity.get(driverId) ?? null,
-        practicePace: practicePace.get(driverId) ?? null,
-      }))
+      .map((driverId) => {
+        const bayesian = bayesianForRace?.get(driverId);
+        return {
+          driverId,
+          raceId: targetRace.id,
+          basePace: basePaceByDriver.get(driverId) ?? null,
+          driverReliability: driverReliability.get(driverId) ?? null,
+          trackAffinity: trackAffinity.get(driverId) ?? null,
+          practicePace: practicePace.get(driverId) ?? null,
+          paceUncertainty: bayesian && bayesian.sampleSize > 0 ? bayesian.variance : null,
+        };
+      })
       .filter(
         (r) =>
           r.basePace != null ||
@@ -104,6 +116,7 @@ export async function computeSeasonRatings(season: number, onProgress?: Progress
             driverReliability: sql`excluded.driver_reliability`,
             trackAffinity: sql`excluded.track_affinity`,
             practicePace: sql`excluded.practice_pace`,
+            paceUncertainty: sql`excluded.pace_uncertainty`,
             computedAt: new Date(),
           },
         });

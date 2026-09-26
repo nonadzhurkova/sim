@@ -36,6 +36,13 @@
       "when": 1790348298193,
       "tag": "0004_add_driver_media",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790396242215,
+      "tag": "0005_add_pace_uncertainty",
+      "breakpoints": true
     }
   ]
 }
