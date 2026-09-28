@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRaceByRoute } from "@/queries/races";
+import { getRaceByRoute, getAdjacentRaces } from "@/queries/races";
 import { getAllSessionPaceForRace } from "@/queries/session-pace";
 import { getYearOverYearComparison } from "@/queries/comparison";
 import { RaceHeader } from "@/components/race-header";
-import { ImportButton } from "@/components/import-button";
+import { SessionSchedulePanel } from "@/components/session-schedule-panel";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
 import { RatingsPanel } from "@/components/ratings-panel";
 import { PredictionPanel } from "@/components/prediction-panel";
+import { XgboostPredictionPanel } from "@/components/xgboost-prediction-panel";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
 import { CarPerformancePanel } from "@/components/car-performance-panel";
@@ -18,6 +19,8 @@ const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
   fp2: "FP2",
   fp3: "FP3",
+  sprint_quali: "Sprint Quali",
+  sprint: "Sprint",
   q: "Qualifying",
   r: "Race",
 };
@@ -34,10 +37,11 @@ export default async function RacePage({
   const race = await getRaceByRoute(season, round);
   if (!race) notFound();
 
-  const [sessionPace, comparison, carPerformance] = await Promise.all([
+  const [sessionPace, comparison, carPerformance, adjacentRaces] = await Promise.all([
     getAllSessionPaceForRace(race.id),
     getYearOverYearComparison(season, round),
     getCarPerformance(season, race.id),
+    getAdjacentRaces(race.date),
   ]);
 
   const hasPracticeData = sessionPace.fp1 != null || sessionPace.fp2 != null || sessionPace.fp3 != null;
@@ -45,17 +49,42 @@ export default async function RacePage({
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
       <div className="flex items-center justify-between gap-4">
-        <RaceHeader race={race} />
+        <RaceHeader race={race} adjacentRaces={adjacentRaces} />
         <div className="flex items-center gap-3">
+          <Link
+            href={`/race/${season}/${round}/prediction-review`}
+            className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
+          >
+            Prediction Review →
+          </Link>
           <Link
             href={`/race/${season}/${round}/analysis`}
             className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
           >
             Telemetry Analysis →
           </Link>
-          <ImportButton season={season} />
         </div>
       </div>
+
+      <div className="mt-6">
+        <SessionSchedulePanel raceId={race.id} />
+      </div>
+
+      <section className="mt-8">
+        <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+          {"//"} This weekend
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Object.entries(sessionPace).map(([type, rows]) => (
+            <SessionPaceTable key={type} title={SESSION_LABELS[type] ?? type} rows={rows} />
+          ))}
+          {Object.keys(sessionPace).length === 0 && (
+            <p className="hud-mono text-xs text-slate-500">
+              NO SESSION DATA YET FOR THIS RACE WEEKEND.
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="mt-6">
         <CarPerformancePanel rows={carPerformance} seasonLabel={`${season} Season`} />
@@ -82,28 +111,16 @@ export default async function RacePage({
         </section>
       )}
 
-      <section className="mt-8">
-        <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-          {"//"} This weekend
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {Object.entries(sessionPace).map(([type, rows]) => (
-            <SessionPaceTable key={type} title={SESSION_LABELS[type] ?? type} rows={rows} />
-          ))}
-          {Object.keys(sessionPace).length === 0 && (
-            <p className="hud-mono text-xs text-slate-500">
-              NO SESSION DATA YET FOR THIS RACE WEEKEND.
-            </p>
-          )}
-        </div>
-      </section>
-
       {/* Shown for every race, not just upcoming ones: running the model
           against a race whose result is already known is how the prediction
           gets validated, so hiding it for past races would remove the only
           way to judge whether it works. */}
       <section className="mt-8">
         <PredictionPanel raceId={race.id} />
+      </section>
+
+      <section className="mt-8">
+        <XgboostPredictionPanel raceId={race.id} />
       </section>
 
       {comparison && (
