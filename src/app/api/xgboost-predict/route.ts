@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { drivers, teams, raceResults, races, xgboostPredictions } from "@/db/schema";
+import { drivers, teams, raceResults, xgboostPredictions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { buildXgboostFeatures } from "@/sim/xgboost-features";
 import { predictRace, xgboostModelAvailable } from "@/sim/xgboost-model";
 import { MODEL_VERSION } from "@/sim/params";
+import { isBeforeRaceStart } from "@/sim/run-simulation";
 
 /**
  * Scores one race with the XGBoost overlay (scripts/xgboost/) — trained
@@ -67,8 +68,7 @@ export async function POST(req: Request) {
   // updates this race's stored prediction; predictedBeforeRace, stamped at
   // write time, is what makes it possible to tell a genuine pre-race call
   // apart from a post-race replay later without guessing from a timestamp.
-  const [raceRow] = await db.select({ date: races.date }).from(races).where(eq(races.id, raceId));
-  const predictedBeforeRace = raceRow ? new Date(raceRow.date).getTime() > Date.now() : false;
+  const predictedBeforeRace = await isBeforeRaceStart(raceId);
   await db.delete(xgboostPredictions).where(eq(xgboostPredictions.raceId, raceId));
   if (predictions.length > 0) {
     await db.insert(xgboostPredictions).values(

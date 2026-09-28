@@ -15,8 +15,17 @@ function pct(v: number): string {
  * The next/current race, leading the home page — what a returning visitor
  * almost always wants first, ahead of season-wide stats. Shows the top-3
  * win chances when a prediction has already been made for it (see
- * getNextRaceTopContenders); otherwise a plain prompt to go run one, rather
- * than triggering a simulation on every home-page load.
+ * getNextRaceTopContenders).
+ *
+ * When nothing's been run yet, this deliberately does NOT fall back to the
+ * season projection's own per-race numbers (src/sim/season.ts's
+ * raceOutlooks) even though that data technically exists: computing a full
+ * season projection takes tens of seconds and is explicitly kept off every
+ * page render (see /api/season-projection's own comment) -- silently
+ * triggering it here just because one race lacks a stored prediction would
+ * reintroduce exactly the cost that endpoint was built to avoid. The
+ * Monte Carlo run on the race page itself is fast (seconds, not tens of
+ * seconds) and one click away, so the empty state points there instead.
  */
 export function NextRaceCard({
   race,
@@ -72,7 +81,8 @@ export function NextRaceCard({
         </div>
       ) : (
         <p className="hud-mono mt-4 text-[11px] text-slate-400">
-          NO PREDICTION RUN FOR THIS RACE YET — OPEN THE RACE PAGE TO RUN ONE.
+          NO ONE HAS RUN THE PREDICTION FOR THIS RACE YET — CLICK{" "}
+          <span className="text-cyan-400">FULL PREDICTION</span> ABOVE, IT TAKES JUST A FEW SECONDS.
         </p>
       )}
     </HudPanel>

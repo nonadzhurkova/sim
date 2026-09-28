@@ -88,6 +88,16 @@ export const races = pgTable(
       .notNull()
       .references(() => circuits.id),
     date: date("date").notNull(),
+    // Jolpica's schedule endpoint returns `date` (calendar day) and `time`
+    // (UTC time-of-day) as separate fields; this combines them into one
+    // instant. Nullable because older/malformed entries may lack a time --
+    // callers needing "has the race actually started" must treat a null
+    // here as unknown, not as "in the past" or "in the future" by default
+    // (see isBeforeRaceStart in run-simulation.ts). Exists specifically so
+    // "was this prediction made before the race" can be decided against the
+    // actual green flag, not midnight UTC of the calendar date, which wrongly
+    // classified same-day pre-race runs as post-race.
+    startsAt: timestamp("starts_at", { withTimezone: true }),
     // From the calendar endpoint's own "Sprint" field, present ahead of the
     // weekend -- unlike sprint_results (which only exists once the sprint
     // has actually been run), this is known as soon as the calendar is.

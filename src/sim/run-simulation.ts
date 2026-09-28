@@ -9,11 +9,25 @@ import { applyCalibration } from "./calibration";
 /** How often (in iterations) partial results are flushed to the DB mid-run. */
 const PROGRESS_INTERVAL = 1000;
 
-/** Whether `raceId`'s date is still in the future relative to right now — stamped onto a run at creation so it can be told apart later from a post-race replay. */
-async function isBeforeRaceDay(raceId: number): Promise<boolean> {
-  const [row] = await db.select({ date: races.date }).from(races).where(eq(races.id, raceId));
+/**
+ * Whether `raceId`'s race session hasn't started yet, relative to right now
+ * — stamped onto a run at creation so it can be told apart later from a
+ * post-race replay. Uses the actual race start instant (`races.startsAt`,
+ * ingested from Jolpica's date+time), not just the calendar date: comparing
+ * against midnight UTC of race day wrongly classified a prediction made
+ * hours before lights-out (still the same calendar day) as post-race,
+ * since midnight had already passed. Falls back to end-of-day on the
+ * calendar date only for rows without a startsAt (ingested before this
+ * field existed, or a malformed upstream entry) -- looser than the real
+ * start time, but strictly closer to correct than the old start-of-day
+ * comparison it replaces.
+ */
+export async function isBeforeRaceStart(raceId: number): Promise<boolean> {
+  const [row] = await db.select({ date: races.date, startsAt: races.startsAt }).from(races).where(eq(races.id, raceId));
   if (!row) return false;
-  return new Date(row.date).getTime() > Date.now();
+  if (row.startsAt) return row.startsAt.getTime() > Date.now();
+  const endOfRaceDay = new Date(`${row.date}T23:59:59Z`).getTime();
+  return endOfRaceDay > Date.now();
 }
 
 /**
@@ -82,7 +96,7 @@ export async function runAndStoreSimulation(
       iterationCount: iterations,
       status: "running",
       startedAt: new Date(),
-      predictedBeforeRace: await isBeforeRaceDay(raceId),
+      predictedBeforeRace: await isBeforeRaceStart(raceId),
       modelVersion: MODEL_VERSION,
     })
     .returning({ id: simulationRuns.id });
@@ -168,7 +182,7 @@ export async function* streamSimulation(
       iterationCount: iterations,
       status: "running",
       startedAt: new Date(),
-      predictedBeforeRace: await isBeforeRaceDay(raceId),
+      predictedBeforeRace: await isBeforeRaceStart(raceId),
       modelVersion: MODEL_VERSION,
     })
     .returning({ id: simulationRuns.id });

@@ -3,6 +3,9 @@ config({ path: ".env.local" });
 
 /** CLI: npm run backtest -- <season> [iterations] [--model=bayesian|ensemble] [--weight=0.5] */
 async function main() {
+  const { checkModelVersionFreshness } = await import("./check-model-version");
+  checkModelVersionFreshness();
+
   const { backtestSeason, attachWinnerNames, DEFAULT_ENSEMBLE_WEIGHT } = await import("./backtest");
   const args = process.argv
     .slice(2)

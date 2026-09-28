@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { getRaceByRoute, getAdjacentRaces } from "@/queries/races";
 import { getAllSessionPaceForRace } from "@/queries/session-pace";
 import { getYearOverYearComparison } from "@/queries/comparison";
+import { buildPredictionReview } from "@/queries/prediction-review";
 import { RaceHeader } from "@/components/race-header";
 import { SessionSchedulePanel } from "@/components/session-schedule-panel";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
 import { PredictionTabs } from "@/components/prediction-tabs";
+import { RaceResultSummary } from "@/components/race-result-summary";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
 import { CarPerformancePanel } from "@/components/car-performance-panel";
@@ -35,14 +37,20 @@ export default async function RacePage({
   const race = await getRaceByRoute(season, round);
   if (!race) notFound();
 
-  const [sessionPace, comparison, carPerformance, adjacentRaces] = await Promise.all([
+  const [sessionPace, comparison, carPerformance, adjacentRaces, review] = await Promise.all([
     getAllSessionPaceForRace(race.id),
     getYearOverYearComparison(season, round),
     getCarPerformance(season, race.id),
     getAdjacentRaces(race.date),
+    buildPredictionReview(race.id),
   ]);
 
   const hasPracticeData = sessionPace.fp1 != null || sessionPace.fp2 != null || sessionPace.fp3 != null;
+  // buildPredictionReview returns null specifically when the race has no
+  // result yet (see its own doc comment) -- the same signal this page uses
+  // to decide whether to lead with "here's the result" or "here's the
+  // upcoming prediction."
+  const isFinished = review != null;
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
@@ -70,16 +78,22 @@ export default async function RacePage({
         </div>
       </div>
 
-      {/* Prediction leads the page — it's the thing most visitors come here
-          for, before/during/after the race alike. Shown even for already-run
-          races, deliberately: running the model against a known result is
-          how it gets validated, so hiding it after the fact would remove the
-          only way to judge whether it works. Tabbed rather than stacked: two
-          panels with similar titles back-to-back read as duplicates, not as
-          "the real prediction" plus "a second opinion." */}
-      <section className="mt-6">
-        <PredictionTabs raceId={race.id} />
-      </section>
+      {/* Prediction leads the page before/during a race weekend, since that's
+          what most visitors come here for. Once the race is decided, a
+          visitor is more likely asking "what happened, and did the model get
+          it right" than "run me a simulation" -- so a finished race leads
+          with RaceResultSummary (result vs. frozen prediction) instead, and
+          the interactive PredictionTabs (still useful for validation, see
+          its own comment) moves further down rather than disappearing. */}
+      {isFinished ? (
+        <section className="mt-6">
+          <RaceResultSummary review={review} season={season} round={round} />
+        </section>
+      ) : (
+        <section className="mt-6">
+          <PredictionTabs raceId={race.id} />
+        </section>
+      )}
 
       <div className="mt-6">
         <SessionSchedulePanel raceId={race.id} />
@@ -123,6 +137,17 @@ export default async function RacePage({
             title="Projected Race Pace (from long runs so far)"
             emptyMessage="NO LONG-RUN STINTS DETECTED YET FOR THIS WEEKEND."
           />
+        </section>
+      )}
+
+      {isFinished && (
+        <section className="mt-8">
+          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+            {"//"} Model prediction (interactive)
+          </p>
+          <div className="mt-4">
+            <PredictionTabs raceId={race.id} />
+          </div>
         </section>
       )}
 

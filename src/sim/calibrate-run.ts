@@ -9,6 +9,9 @@ config({ path: ".env.local" });
  * after, on the holdout only, since that's the honest test.
  */
 async function main() {
+  const { checkModelVersionFreshness } = await import("./check-model-version");
+  checkModelVersionFreshness();
+
   const { backtestSeason } = await import("./backtest");
   const { fitPlattScaling, applyCalibration } = await import("./calibration");
 

@@ -60,7 +60,21 @@ Expected pace is a weighted combination of independent signals
 | `raceForm` | recent race pace over the driver's last few races |
 
 Weights are renormalized over whichever signals are actually present, so a
-missing signal doesn't penalize a driver — the rest just carry more weight.
+missing signal isn't a hole in the sum — the rest just carry more weight.
+This holds cleanly only when every signal is centered the same way (all of
+them are field-relative, zero-centered, except one): `basePace`'s own
+qualifying component (`qualScore` in `compute.ts`) is built from the raw
+`gapToPole` column, which is always ≥ 0, not field-relative like every
+other signal here. A driver with both a qualifying and a race-pace history
+gets `(qualScore + paceScore) / 2` — paceScore being ~0-centered pulls the
+raw qualScore back toward a sane range — but a driver missing race-pace
+data falls back to qualScore alone, still on its raw, always-positive
+scale. So that specific driver is shifted toward looking slower purely from
+the units mismatch, not just left with fewer signals contributing. Not yet
+fixed — centering `qualLookup` the same way `qualiForm` does was tried
+once already this session for a different reason (see the trimmed-mean fix
+above) and reverted for regressing real-grid top-3 accuracy, so this needs
+its own dedicated backtest before changing, not a quick centering pass.
 
 `qualiForm` (and `basePace`'s own qualifying component) combine a driver's
 per-race qualifying history with a **trimmed mean**: the single best and
@@ -249,12 +263,24 @@ untouched by that sweep, before adopting it. At 15-24 scorable races per
 season, a single race's outcome is worth several accuracy points — treat a
 one-race swing in top-1/top-3 as noise unless it's corroborated by log loss
 or calibration, which use every driver's probability in every race and are
-far more stable at this sample size. 2024, 2025, and 2026 are all ingested
-and share one regulation era (`ground_effect_2022_2026`); 2024 is reserved
-as a holdout for validating new changes once 2025/2026 have both been used
-to tune existing constants, though a change validated only on 2025/2026 and
-checked cold on 2024 is on genuinely equal footing across all three, not
-just "sanity checked."
+far more stable at this sample size. 2024, 2025, and 2026 are all ingested.
+2024 is called the **check season** below, not a holdout — by this point
+it's been used to validate the trimmed-mean fix, the qualScore trim, the
+sprint-blend rejection, the XGBoost retest, and the Platt refit, so calling
+it "untouched" would be dishonest. It's still useful (each of those checks
+ran cold, without first tuning against 2024 itself), just not clean in the
+stronger sense of "never looked at." The one genuinely clean test going
+forward is the frozen prediction log (see "Frozen prediction log" above) —
+what the model actually said about a real future race before it happened,
+which by construction can't have been tuned to match.
+
+Correction to an earlier claim in this file: 2024-2026 are **not** one
+regulation era. `ground_effect_2022_2026` (the label used by the XGBoost
+overlay's era feature) is a data-dependent bin — its upper edge is just
+however far the ingested data currently reaches, not a claim that the rules
+haven't changed. 2026 introduced new power units and active aero, a real
+regulation change from 2022-2025; the feature currently mislabels it as the
+same era, a known gap (see "What's been tried" for the XGBoost overlay).
 
 ### What's been tried
 

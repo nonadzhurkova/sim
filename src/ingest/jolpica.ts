@@ -47,6 +47,8 @@ type ErgastRace = {
   season: string;
   round: string;
   date: string;
+  /** UTC time-of-day, e.g. "04:00:00Z" -- present on every race Jolpica has scheduling data for, absent on some very old/incomplete entries. */
+  time?: string;
   Circuit: ErgastCircuit;
   Results?: ErgastRaceResult[];
   QualifyingResults?: ErgastQualifyingResult[];
@@ -54,6 +56,14 @@ type ErgastRace = {
   /** Present (with its own scheduled date/time) only on sprint weekends, in the calendar endpoint's response -- known ahead of the weekend, unlike SprintResults. */
   Sprint?: unknown;
 };
+
+/** Combines Jolpica's separate date + time-of-day fields into one instant, or null if either is missing/malformed. */
+function raceStartsAt(date: string, time?: string): Date | null {
+  if (!time) return null;
+  const iso = `${date}T${time}`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -148,12 +158,13 @@ async function upsertRace(r: ErgastRace, circuitId: number): Promise<number> {
   const season = parseInt(r.season, 10);
   const round = parseInt(r.round, 10);
   const isSprintWeekend = r.Sprint != null;
+  const startsAt = raceStartsAt(r.date, r.time);
   const [row] = await db
     .insert(races)
-    .values({ season, round, circuitId, date: r.date, isSprintWeekend })
+    .values({ season, round, circuitId, date: r.date, startsAt, isSprintWeekend })
     .onConflictDoUpdate({
       target: [races.season, races.round],
-      set: { circuitId, date: r.date, isSprintWeekend },
+      set: { circuitId, date: r.date, startsAt, isSprintWeekend },
     })
     .returning({ id: races.id });
   return row.id;
