@@ -9,6 +9,7 @@ import {
   QUALI_NOISE_STD_DEV,
   GRID_PENALTY_PER_POSITION,
   GRID_PENALTY_DEFAULT,
+  RACE_CRAFT_WEIGHT,
   SAFETY_CAR_PROBABILITY,
   SAFETY_CAR_PROBABILITY_DEFAULT,
   SAFETY_CAR_COMPRESSION,
@@ -97,6 +98,15 @@ const DEFAULT_SEASON_ITERATIONS = 2000;
  * A trimmed copy of the single-race engine: the season model needs only the
  * order, not the full per-driver statistics, and runs it thousands of times
  * across many races.
+ *
+ * Known remaining divergence from engine.ts: this always uses the flat
+ * PACE_NOISE_STD_DEV, not engine.ts's per-driver noise widened by
+ * paceUncertainty (PACE_UNCERTAINTY_WEIGHT). Currently harmless --
+ * PACE_UNCERTAINTY_WEIGHT is 0 (tested and rejected, see project memory),
+ * so engine.ts's version reduces to the same flat value -- but if that
+ * weight is ever revisited, this file would need the same change to stay
+ * in sync. Not added preemptively since it would be genuinely dead code
+ * until then.
  */
 function simulateRaceOrder(
   ctx: SimContext,
@@ -132,7 +142,14 @@ function simulateRaceOrder(
   for (let i = 0; i < n; i++) {
     const e = ctx.entrants[i];
     retired[i] = sampleBernoulli(rng, e.dnfRate);
-    pace[i] = e.expectedPace + sampleNormal(rng, 0, PACE_NOISE_STD_DEV) + (grid[i] - 1) * gridPenalty;
+    // Matches engine.ts's per-iteration race-pace step exactly, including
+    // the race-craft grid offset (currently inert at RACE_CRAFT_WEIGHT=0,
+    // but this file previously omitted it entirely -- a real divergence
+    // from the single-race engine that would have silently re-appeared the
+    // moment race craft was ever re-enabled, without touching this copy).
+    const effectiveGrid = grid[i] - (e.raceCraft ?? 0) * RACE_CRAFT_WEIGHT;
+    const gridCost = Math.max(0, effectiveGrid - 1) * gridPenalty;
+    pace[i] = e.expectedPace + sampleNormal(rng, 0, PACE_NOISE_STD_DEV) + gridCost;
   }
   if (safetyCar) {
     let sum = 0;
