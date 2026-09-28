@@ -66,9 +66,33 @@ export default async function RacePage({
         </div>
       </div>
 
+      {/* Prediction leads the page — it's the thing most visitors come here
+          for, before/during/after the race alike. Shown even for already-run
+          races, deliberately: running the model against a known result is
+          how it gets validated, so hiding it after the fact would remove the
+          only way to judge whether it works. */}
+      <section className="mt-6">
+        <PredictionPanel raceId={race.id} />
+      </section>
+
+      <section className="mt-6">
+        <XgboostPredictionPanel raceId={race.id} />
+      </section>
+
       <div className="mt-6">
         <SessionSchedulePanel raceId={race.id} />
       </div>
+
+      {comparison && (
+        <section className="mt-8">
+          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+            {"//"} Ratings
+          </p>
+          <div className="mt-4">
+            <RatingsPanel snapshot={comparison.thisYear} />
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
@@ -108,29 +132,6 @@ export default async function RacePage({
             title="Projected Race Pace (from long runs so far)"
             emptyMessage="NO LONG-RUN STINTS DETECTED YET FOR THIS WEEKEND."
           />
-        </section>
-      )}
-
-      {/* Shown for every race, not just upcoming ones: running the model
-          against a race whose result is already known is how the prediction
-          gets validated, so hiding it for past races would remove the only
-          way to judge whether it works. */}
-      <section className="mt-8">
-        <PredictionPanel raceId={race.id} />
-      </section>
-
-      <section className="mt-8">
-        <XgboostPredictionPanel raceId={race.id} />
-      </section>
-
-      {comparison && (
-        <section className="mt-8">
-          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-            {"//"} Ratings
-          </p>
-          <div className="mt-4">
-            <RatingsPanel snapshot={comparison.thisYear} />
-          </div>
         </section>
       )}
 
