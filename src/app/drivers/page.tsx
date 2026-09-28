@@ -3,36 +3,50 @@ import { db } from "@/db";
 import { drivers, teams, raceResults, races } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getLatestSeason } from "@/queries/races";
+import { getStandings } from "@/queries/standings";
 import { TeamBadge } from "@/components/team-badge";
 import { getTeamColor } from "@/lib/team-colors";
 
-/** Driver index for the current season, as a grid of cards. */
+/** Driver index for the current season, as a grid of cards, ordered by the constructors' championship. */
 export default async function DriversPage() {
   const season = await getLatestSeason();
 
   // Every driver who has a result this season, with their most recent team.
-  const rows = await db
-    .select({
-      driverId: drivers.id,
-      name: drivers.name,
-      driverNumber: drivers.driverNumber,
-      headshotUrl: drivers.headshotUrl,
-      teamName: teams.name,
-      round: races.round,
-    })
-    .from(raceResults)
-    .innerJoin(drivers, eq(raceResults.driverId, drivers.id))
-    .innerJoin(teams, eq(raceResults.teamId, teams.id))
-    .innerJoin(races, eq(raceResults.raceId, races.id))
-    .where(eq(races.season, season))
-    .orderBy(desc(races.round));
+  const [rows, standings] = await Promise.all([
+    db
+      .select({
+        driverId: drivers.id,
+        name: drivers.name,
+        driverNumber: drivers.driverNumber,
+        headshotUrl: drivers.headshotUrl,
+        teamName: teams.name,
+        round: races.round,
+      })
+      .from(raceResults)
+      .innerJoin(drivers, eq(raceResults.driverId, drivers.id))
+      .innerJoin(teams, eq(raceResults.teamId, teams.id))
+      .innerJoin(races, eq(raceResults.raceId, races.id))
+      .where(eq(races.season, season))
+      .orderBy(desc(races.round)),
+    getStandings(season),
+  ]);
 
   // First row per driver wins, which is their latest team this season.
   const byDriver = new Map<number, (typeof rows)[number]>();
   for (const r of rows) if (!byDriver.has(r.driverId)) byDriver.set(r.driverId, r);
-  const list = [...byDriver.values()].sort(
-    (a, b) => (a.teamName ?? "").localeCompare(b.teamName ?? "") || a.name.localeCompare(b.name),
-  );
+
+  const teamRankByName = new Map(standings.teams.map((t) => [t.teamName, t.position]));
+  const driverPointsById = new Map(standings.drivers.map((d) => [d.driverId, d.points]));
+  const UNRANKED = Number.MAX_SAFE_INTEGER;
+
+  const list = [...byDriver.values()].sort((a, b) => {
+    const teamRankA = teamRankByName.get(a.teamName ?? "") ?? UNRANKED;
+    const teamRankB = teamRankByName.get(b.teamName ?? "") ?? UNRANKED;
+    if (teamRankA !== teamRankB) return teamRankA - teamRankB;
+    const pointsA = driverPointsById.get(a.driverId) ?? 0;
+    const pointsB = driverPointsById.get(b.driverId) ?? 0;
+    return pointsB - pointsA || a.name.localeCompare(b.name);
+  });
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">

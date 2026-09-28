@@ -1,0 +1,1 @@
+ALTER TABLE "races" ADD COLUMN "is_sprint_weekend" boolean DEFAULT false NOT NULL;

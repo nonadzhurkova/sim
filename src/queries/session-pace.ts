@@ -3,7 +3,7 @@ import { sessions, laps, drivers } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "./driver-teams";
 
-export type SessionType = "fp1" | "fp2" | "fp3" | "q" | "r";
+export type SessionType = "fp1" | "fp2" | "fp3" | "sprint_quali" | "sprint" | "q" | "r";
 
 /**
  * A lap below this fraction of the session's median lap time is treated as a
@@ -103,7 +103,7 @@ export async function getSessionPaceRanking(
 }
 
 // Most relevant/recent first: race, then qualifying, then practice in reverse order.
-const SESSION_DISPLAY_ORDER: SessionType[] = ["r", "q", "fp3", "fp2", "fp1"];
+const SESSION_DISPLAY_ORDER: SessionType[] = ["r", "q", "sprint", "sprint_quali", "fp3", "fp2", "fp1"];
 
 /**
  * Convenience wrapper: computes session pace only for sessions that
@@ -121,10 +121,16 @@ export async function getAllSessionPaceForRace(
     .where(eq(sessions.raceId, raceId));
   const existingTypes = new Set(existingSessions.map((s) => s.sessionType));
 
+  const typesToFetch = SESSION_DISPLAY_ORDER.filter((t) => existingTypes.has(t));
+  // Independent per-session-type queries against a remote DB -- run them
+  // concurrently rather than awaiting one at a time, the same sequential
+  // round-trip pattern that made src/sim/xgboost-features.ts's rolling-form
+  // lookup pathologically slow before it was batched.
+  const rankings = await Promise.all(typesToFetch.map((t) => getSessionPaceRanking(raceId, t)));
+
   const result: Partial<Record<SessionType, DriverSessionPace[]>> = {};
-  for (const sessionType of SESSION_DISPLAY_ORDER) {
-    if (!existingTypes.has(sessionType)) continue;
-    result[sessionType] = await getSessionPaceRanking(raceId, sessionType);
-  }
+  typesToFetch.forEach((sessionType, i) => {
+    result[sessionType] = rankings[i];
+  });
   return result;
 }

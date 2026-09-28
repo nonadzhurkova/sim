@@ -21,6 +21,8 @@ export const sessionTypeEnum = pgEnum("session_type", [
   "fp1",
   "fp2",
   "fp3",
+  "sprint_quali",
+  "sprint",
   "q",
   "r",
 ]);
@@ -86,6 +88,10 @@ export const races = pgTable(
       .notNull()
       .references(() => circuits.id),
     date: date("date").notNull(),
+    // From the calendar endpoint's own "Sprint" field, present ahead of the
+    // weekend -- unlike sprint_results (which only exists once the sprint
+    // has actually been run), this is known as soon as the calendar is.
+    isSprintWeekend: boolean("is_sprint_weekend").notNull().default(false),
   },
   (t) => [unique().on(t.season, t.round)],
 );
@@ -126,6 +132,33 @@ export const raceResults = pgTable(
     finishPosition: integer("finish_position"),
     status: raceStatusEnum("status"),
     dnfCause: dnfCauseEnum("dnf_cause"),
+  },
+  (t) => [unique().on(t.raceId, t.driverId)],
+);
+
+/**
+ * Sprint race classification, kept separate from raceResults rather than a
+ * flag on it: a driver has at most one row in each per raceId (the same
+ * unique(raceId, driverId) shape), but the two are scored on entirely
+ * different points tables and a round either has both or just the main
+ * race, never a mix that a shared table's constraints could express cleanly.
+ */
+export const sprintResults = pgTable(
+  "sprint_results",
+  {
+    id: serial("id").primaryKey(),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    driverId: integer("driver_id")
+      .notNull()
+      .references(() => drivers.id),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id),
+    gridPosition: integer("grid_position"),
+    finishPosition: integer("finish_position"),
+    status: raceStatusEnum("status"),
   },
   (t) => [unique().on(t.raceId, t.driverId)],
 );
@@ -231,6 +264,21 @@ export const simulationRuns = pgTable("simulation_runs", {
   status: simulationStatusEnum("status").notNull().default("pending"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
+  // The two fields below turn this table into an honest prediction log:
+  // without them, "the model's prediction for this race" is ambiguous
+  // between what it said before the result was known and what re-running it
+  // today (after further tuning) says in hindsight.
+  //
+  // Whether the race hadn't happened yet (by calendar date) at the moment
+  // this run was created. A run made the day before the race and one made
+  // a month after it, re-simulating for review, both produce a row in this
+  // table -- only this flag tells them apart later.
+  predictedBeforeRace: boolean("predicted_before_race"),
+  // MODEL_VERSION (src/sim/params.ts) at the moment this run was created —
+  // a hand-bumped string, not a hash, but enough to tell "this run predates
+  // the qualiForm trimmed-mean fix" from "this run postdates it" without
+  // guessing from the timestamp alone.
+  modelVersion: text("model_version"),
 });
 
 export const simulationResults = pgTable("simulation_results", {
@@ -245,3 +293,32 @@ export const simulationResults = pgTable("simulation_results", {
   podiumPct: real("podium_pct"),
   pointsPct: real("points_pct"),
 });
+
+/**
+ * One row per driver per race for the XGBoost overlay's prediction — the
+ * same "frozen prediction log" idea as simulation_runs/simulation_results,
+ * but for the second model, which had no persistence at all before (every
+ * click just returned JSON with nothing saved). A click replaces this
+ * race's rows wholesale (see xgboost-model's persist function), so
+ * "predictedAt"/"predictedBeforeRace" always describe the most recent
+ * click, matching how the Monte Carlo run behaves via getFrozenPrediction.
+ */
+export const xgboostPredictions = pgTable(
+  "xgboost_predictions",
+  {
+    id: serial("id").primaryKey(),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    driverId: integer("driver_id")
+      .notNull()
+      .references(() => drivers.id),
+    predFinishPosition: real("pred_finish_position"),
+    predDnfProb: real("pred_dnf_prob"),
+    winProbability: real("win_probability"),
+    predictedAt: timestamp("predicted_at").defaultNow(),
+    predictedBeforeRace: boolean("predicted_before_race"),
+    modelVersion: text("model_version"),
+  },
+  (t) => [unique().on(t.raceId, t.driverId)],
+);

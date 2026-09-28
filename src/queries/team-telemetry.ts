@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { sessions, races } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import type { SessionType } from "./session-pace";
 
 /**
  * On-the-fly telemetry analysis for one team at one race weekend.
@@ -125,7 +126,7 @@ export type FieldRanking = {
 };
 
 export type SessionTelemetryAnalysis = {
-  sessionType: "fp1" | "fp2" | "fp3" | "q" | "r";
+  sessionType: SessionType;
   /** Every driver in the session, ranked by best lap. */
   drivers: DriverTelemetrySummary[];
   /** The target team's own drivers. */
@@ -384,12 +385,12 @@ export async function getTeamTelemetryReport(
     .where(
       and(
         eq(sessions.raceId, raceId),
-        inArray(sessions.sessionType, ["fp1", "fp2", "fp3", "q", "r"]),
+        inArray(sessions.sessionType, ["fp1", "fp2", "fp3", "sprint_quali", "sprint", "q", "r"]),
       ),
     );
 
   const withKeys = storedSessions.filter(
-    (s): s is { sessionType: "fp1" | "fp2" | "fp3" | "q" | "r"; key: number } => s.key != null,
+    (s): s is { sessionType: SessionType; key: number } => s.key != null,
   );
 
   const base: TeamTelemetryReport = {

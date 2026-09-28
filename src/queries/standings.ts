@@ -1,26 +1,33 @@
 import { db } from "@/db";
-import { races, raceResults, drivers, teams } from "@/db/schema";
+import { races, raceResults, sprintResults, drivers, teams } from "@/db/schema";
 import { eq, and, lte, asc } from "drizzle-orm";
 
 /**
- * Championship standings, computed from stored race results.
+ * Championship standings, computed from stored race + sprint results.
  *
  * Ergast/Jolpica does expose standings endpoints, but deriving them from the
  * results we already have avoids another ingestion path and another thing to
  * keep in sync — and it means a standings table exists for any race we have
  * results for, including partial seasons.
  *
- * Caveat worth knowing: this counts race-classification points only. Sprint
- * races and the fastest-lap bonus (where a season used one) are not modelled,
- * so totals can differ slightly from the official table in those seasons.
+ * Caveat worth knowing: the fastest-lap bonus (where a season used one) is
+ * not modelled, so totals can differ slightly from the official table in
+ * those seasons.
  */
 
 /** Current F1 scoring for positions 1-10. */
 const POINTS_BY_POSITION = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+/** Sprint scoring for positions 1-8 -- confirmed against Jolpica's own sprint results. */
+const SPRINT_POINTS_BY_POSITION = [8, 7, 6, 5, 4, 3, 2, 1];
 
 export function pointsForPosition(position: number | null): number {
   if (position == null || position < 1 || position > POINTS_BY_POSITION.length) return 0;
   return POINTS_BY_POSITION[position - 1];
+}
+
+export function sprintPointsForPosition(position: number | null): number {
+  if (position == null || position < 1 || position > SPRINT_POINTS_BY_POSITION.length) return 0;
+  return SPRINT_POINTS_BY_POSITION[position - 1];
 }
 
 export type DriverStanding = {
@@ -80,24 +87,47 @@ export async function getStandings(season: number, upToRound?: number): Promise<
   const conditions = [eq(races.season, season)];
   if (upToRound != null) conditions.push(lte(races.round, upToRound));
 
-  const rows: ResultRow[] = await db
-    .select({
-      round: races.round,
-      driverId: raceResults.driverId,
-      driverName: drivers.name,
-      driverNumber: drivers.driverNumber,
-      headshotUrl: drivers.headshotUrl,
-      teamId: raceResults.teamId,
-      teamName: teams.name,
-      finishPosition: raceResults.finishPosition,
-      status: raceResults.status,
-    })
-    .from(raceResults)
-    .innerJoin(races, eq(raceResults.raceId, races.id))
-    .innerJoin(drivers, eq(raceResults.driverId, drivers.id))
-    .innerJoin(teams, eq(raceResults.teamId, teams.id))
-    .where(and(...conditions))
-    .orderBy(asc(races.round));
+  const [rows, sprintRows]: [ResultRow[], ResultRow[]] = await Promise.all([
+    db
+      .select({
+        round: races.round,
+        driverId: raceResults.driverId,
+        driverName: drivers.name,
+        driverNumber: drivers.driverNumber,
+        headshotUrl: drivers.headshotUrl,
+        teamId: raceResults.teamId,
+        teamName: teams.name,
+        finishPosition: raceResults.finishPosition,
+        status: raceResults.status,
+      })
+      .from(raceResults)
+      .innerJoin(races, eq(raceResults.raceId, races.id))
+      .innerJoin(drivers, eq(raceResults.driverId, drivers.id))
+      .innerJoin(teams, eq(raceResults.teamId, teams.id))
+      .where(and(...conditions))
+      .orderBy(asc(races.round)),
+    // Sprint results only ever contribute points -- wins/podiums/progression
+    // below are deliberately kept to the main race, so a sprint result never
+    // touches those.
+    db
+      .select({
+        round: races.round,
+        driverId: sprintResults.driverId,
+        driverName: drivers.name,
+        driverNumber: drivers.driverNumber,
+        headshotUrl: drivers.headshotUrl,
+        teamId: sprintResults.teamId,
+        teamName: teams.name,
+        finishPosition: sprintResults.finishPosition,
+        status: sprintResults.status,
+      })
+      .from(sprintResults)
+      .innerJoin(races, eq(sprintResults.raceId, races.id))
+      .innerJoin(drivers, eq(sprintResults.driverId, drivers.id))
+      .innerJoin(teams, eq(sprintResults.teamId, teams.id))
+      .where(and(...conditions))
+      .orderBy(asc(races.round)),
+  ]);
 
   const roundsScored = rows.length > 0 ? Math.max(...rows.map((r) => r.round)) : 0;
 
@@ -165,7 +195,47 @@ export async function getStandings(season: number, upToRound?: number): Promise<
     t.byRound.set(r.round, (t.byRound.get(r.round) ?? 0) + scored);
   }
 
-  const allRounds = [...new Set(rows.map((r) => r.round))].sort((a, b) => a - b);
+  // Sprint points only -- never wins/podiums, which stay tied to the main
+  // race (see the comment on the sprintRows query above).
+  for (const r of sprintRows) {
+    const scored = r.status === "finished" ? sprintPointsForPosition(r.finishPosition) : 0;
+    if (scored === 0) continue;
+
+    if (!driverAcc.has(r.driverId)) {
+      driverAcc.set(r.driverId, {
+        driverId: r.driverId,
+        driverName: r.driverName,
+        driverNumber: r.driverNumber,
+        headshotUrl: r.headshotUrl,
+        teamName: r.teamName,
+        points: 0,
+        wins: 0,
+        podiums: 0,
+        byRound: new Map(),
+      });
+    }
+    const d = driverAcc.get(r.driverId)!;
+    d.points += scored;
+    d.byRound.set(r.round, (d.byRound.get(r.round) ?? 0) + scored);
+
+    if (!teamAcc.has(r.teamId)) {
+      teamAcc.set(r.teamId, {
+        teamId: r.teamId,
+        teamName: r.teamName,
+        points: 0,
+        wins: 0,
+        podiums: 0,
+        drivers: new Set(),
+        byRound: new Map(),
+      });
+    }
+    const t = teamAcc.get(r.teamId)!;
+    t.points += scored;
+    t.drivers.add(r.driverName);
+    t.byRound.set(r.round, (t.byRound.get(r.round) ?? 0) + scored);
+  }
+
+  const allRounds = [...new Set([...rows.map((r) => r.round), ...sprintRows.map((r) => r.round)])].sort((a, b) => a - b);
   const buildProgression = (byRound: Map<number, number>) => {
     let cumulative = 0;
     return allRounds.map((round) => {

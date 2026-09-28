@@ -17,6 +17,7 @@ export async function getCurrentRace(season: number): Promise<RaceListItem | nul
     round: races.round,
     circuitId: races.circuitId,
     date: races.date,
+    isSprintWeekend: races.isSprintWeekend,
     circuitName: circuits.name,
     country: circuits.country,
   };

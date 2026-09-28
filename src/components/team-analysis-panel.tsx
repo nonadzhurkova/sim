@@ -13,6 +13,7 @@ import {
   type PhaseDelta,
 } from "./telemetry-charts";
 import { TrackMap, type TrackPoint } from "./track-map";
+import type { SessionType } from "@/queries/session-pace";
 
 type DriverSummary = {
   driverNumber: number;
@@ -52,7 +53,7 @@ type FieldRanking = {
 };
 
 type SessionAnalysis = {
-  sessionType: "fp1" | "fp2" | "fp3" | "q" | "r";
+  sessionType: SessionType;
   drivers: DriverSummary[];
   teamDrivers: DriverSummary[];
   leadDriver: DriverSummary | null;

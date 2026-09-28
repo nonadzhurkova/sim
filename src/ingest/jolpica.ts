@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import type { ProgressReporter } from "./progress";
-import { circuits, drivers, teams, races, raceResults, qualifyingResults } from "@/db/schema";
+import { circuits, drivers, teams, races, raceResults, qualifyingResults, sprintResults } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 const BASE_URL = "https://api.jolpi.ca/ergast/f1";
@@ -50,14 +50,36 @@ type ErgastRace = {
   Circuit: ErgastCircuit;
   Results?: ErgastRaceResult[];
   QualifyingResults?: ErgastQualifyingResult[];
+  SprintResults?: ErgastRaceResult[];
+  /** Present (with its own scheduled date/time) only on sprint weekends, in the calendar endpoint's response -- known ahead of the weekend, unlike SprintResults. */
+  Sprint?: unknown;
 };
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Jolpica request failed (${res.status}): ${url}`);
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Adding the sprint.json fetch alongside results.json and qualifying.json
+ * tripled the request rate per round with no throttling, which started
+ * tripping Jolpica's rate limit mid-ingest and aborting the whole run.
+ * Retries with backoff on 429, same pattern as the OpenF1 client.
+ */
+async function fetchJson<T>(url: string, retries = 5): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url);
+    if (res.status === 429) {
+      const backoffMs = 1000 * 2 ** attempt;
+      console.warn(`[jolpica] rate limited, retrying in ${backoffMs}ms: ${url}`);
+      await sleep(backoffMs);
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`Jolpica request failed (${res.status}): ${url}`);
+    }
+    return res.json() as Promise<T>;
   }
-  return res.json() as Promise<T>;
+  throw new Error(`Jolpica request failed after ${retries} retries (429): ${url}`);
 }
 
 function qualifyingTimeToSeconds(time?: string): number | null {
@@ -125,12 +147,13 @@ async function upsertTeam(c: ErgastConstructor): Promise<number> {
 async function upsertRace(r: ErgastRace, circuitId: number): Promise<number> {
   const season = parseInt(r.season, 10);
   const round = parseInt(r.round, 10);
+  const isSprintWeekend = r.Sprint != null;
   const [row] = await db
     .insert(races)
-    .values({ season, round, circuitId, date: r.date })
+    .values({ season, round, circuitId, date: r.date, isSprintWeekend })
     .onConflictDoUpdate({
       target: [races.season, races.round],
-      set: { circuitId, date: r.date },
+      set: { circuitId, date: r.date, isSprintWeekend },
     })
     .returning({ id: races.id });
   return row.id;
@@ -170,6 +193,37 @@ async function ingestRaceResults(raceId: number, results: ErgastRaceResult[]) {
           finishPosition: parseInt(result.position, 10) || null,
           status,
           dnfCause: null,
+        },
+      });
+  }
+}
+
+/** Same status mapping as ingestRaceResults -- see its comment. */
+async function ingestSprintResults(raceId: number, results: ErgastRaceResult[]) {
+  for (const result of results) {
+    const driverId = await upsertDriver(result.Driver);
+    const teamId = await upsertTeam(result.Constructor);
+    const finished =
+      result.status === "Finished" || result.status === "Lapped" || result.status.startsWith("+");
+    const status = finished ? "finished" : result.status === "Disqualified" ? "dsq" : "dnf";
+
+    await db
+      .insert(sprintResults)
+      .values({
+        raceId,
+        driverId,
+        teamId,
+        gridPosition: parseInt(result.grid, 10) || null,
+        finishPosition: parseInt(result.position, 10) || null,
+        status,
+      })
+      .onConflictDoUpdate({
+        target: [sprintResults.raceId, sprintResults.driverId],
+        set: {
+          teamId,
+          gridPosition: parseInt(result.grid, 10) || null,
+          finishPosition: parseInt(result.position, 10) || null,
+          status,
         },
       });
   }
@@ -218,12 +272,17 @@ async function ingestQualifying(raceId: number, results: ErgastQualifyingResult[
  * if "complete," since it may have been ingested mid-weekend before final
  * results were available upstream.
  */
-async function isRaceFullyIngested(raceId: number): Promise<boolean> {
-  const [[{ resultCount }], [{ qualCount }]] = await Promise.all([
+async function isRaceFullyIngested(raceId: number, isSprintWeekend: boolean): Promise<boolean> {
+  const [[{ resultCount }], [{ qualCount }], [{ sprintCount }]] = await Promise.all([
     db.select({ resultCount: sql<number>`count(*)` }).from(raceResults).where(eq(raceResults.raceId, raceId)),
     db.select({ qualCount: sql<number>`count(*)` }).from(qualifyingResults).where(eq(qualifyingResults.raceId, raceId)),
+    db.select({ sprintCount: sql<number>`count(*)` }).from(sprintResults).where(eq(sprintResults.raceId, raceId)),
   ]);
-  return Number(resultCount) > 0 && Number(qualCount) > 0;
+  if (Number(resultCount) === 0 || Number(qualCount) === 0) return false;
+  // A sprint weekend isn't "fully ingested" until its sprint results exist
+  // too -- otherwise a round already imported before sprint support existed
+  // would be skipped forever, never picking up its sprint points.
+  return !isSprintWeekend || Number(sprintCount) > 0;
 }
 
 export async function ingestSeason(season: number, onProgress?: ProgressReporter) {
@@ -242,8 +301,9 @@ export async function ingestSeason(season: number, onProgress?: ProgressReporter
 
     const circuitId = await upsertCircuit(raceMeta.Circuit);
     const raceId = await upsertRace(raceMeta, circuitId);
+    const isSprintWeekend = raceMeta.Sprint != null;
 
-    if (parseInt(round, 10) !== latestRound && (await isRaceFullyIngested(raceId))) {
+    if (parseInt(round, 10) !== latestRound && (await isRaceFullyIngested(raceId, isSprintWeekend))) {
       skipped++;
       processed++;
       onProgress?.({
@@ -278,6 +338,20 @@ export async function ingestSeason(season: number, onProgress?: ProgressReporter
     const qualResults = qualData.MRData.RaceTable.Races[0]?.QualifyingResults ?? [];
     if (qualResults.length > 0) {
       await ingestQualifying(raceId, qualResults);
+    }
+
+    // The calendar entry's own "Sprint" field already says whether this
+    // round has one -- skip the extra request for the (large majority of)
+    // rounds that don't, rather than firing it every round and relying on
+    // rate-limit backoff to absorb the extra traffic.
+    if (isSprintWeekend) {
+      const sprintData = await fetchJson<{
+        MRData: { RaceTable: { Races: ErgastRace[] } };
+      }>(`${BASE_URL}/${season}/${round}/sprint.json?limit=30`);
+      const sprintResultsData = sprintData.MRData.RaceTable.Races[0]?.SprintResults ?? [];
+      if (sprintResultsData.length > 0) {
+        await ingestSprintResults(raceId, sprintResultsData);
+      }
     }
   }
 

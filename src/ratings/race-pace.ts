@@ -18,14 +18,21 @@ const MIN_CLEAN_LAPS_FOR_SIGNAL = 4;
  * than the field. Normalizes across circuits/conditions so paces are
  * comparable race-to-race. Returns null for a driver if they have no clean
  * laps (e.g. DNF on lap 1), or too few to produce a meaningful median.
+ *
+ * `sessionType` defaults to the main race ("r") but also accepts "sprint" --
+ * a sprint's shorter length (fewer laps, less fuel-load variation) makes its
+ * pace not perfectly interchangeable with a full race's, but it's the same
+ * field-relative-median computation and the closest thing to genuine race
+ * pace available from a sprint weekend.
  */
 export async function computeRaceFieldRelativePace(
   raceId: number,
+  sessionType: "r" | "sprint" = "r",
 ): Promise<Map<number, number>> {
   const [raceSession] = await db
     .select({ id: sessions.id })
     .from(sessions)
-    .where(and(eq(sessions.raceId, raceId), eq(sessions.sessionType, "r")));
+    .where(and(eq(sessions.raceId, raceId), eq(sessions.sessionType, sessionType)));
 
   if (!raceSession) return new Map();
 

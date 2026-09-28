@@ -65,9 +65,9 @@ export default async function StandingsPage({
             roundsScored={standings.roundsScored}
           />
           <p className="hud-mono mt-4 text-[10px] leading-relaxed text-slate-600">
-            COMPUTED FROM RACE CLASSIFICATIONS. SPRINT RACES AND FASTEST-LAP BONUS POINTS ARE
-            NOT INCLUDED, SO TOTALS MAY DIFFER SLIGHTLY FROM THE OFFICIAL TABLE IN SEASONS
-            THAT USED THEM.
+            COMPUTED FROM RACE AND SPRINT CLASSIFICATIONS. THE FASTEST-LAP BONUS POINT IS NOT
+            INCLUDED, SO TOTALS MAY DIFFER SLIGHTLY FROM THE OFFICIAL TABLE IN SEASONS THAT
+            USED IT.
           </p>
         </div>
       )}

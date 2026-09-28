@@ -85,6 +85,7 @@ export async function getYearOverYearComparison(
       round: races.round,
       circuitId: races.circuitId,
       date: races.date,
+      isSprintWeekend: races.isSprintWeekend,
     })
     .from(races)
     .where(and(eq(races.circuitId, thisRace.circuitId), eq(races.season, season - 1)))

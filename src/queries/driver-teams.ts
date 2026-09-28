@@ -41,22 +41,25 @@ export async function getDriverTeamsAsOf(
 
   // Fallback: most recent race_results row at or before this race's date,
   // per missing driver. Small dataset (one season at a time), fine to do
-  // per-driver rather than a single windowed query.
-  for (const driverId of missingDriverIds) {
-    const [row] = await db
-      .select({ teamId: raceResults.teamId, teamName: teams.name, season: races.season, round: races.round })
-      .from(raceResults)
-      .innerJoin(races, eq(raceResults.raceId, races.id))
-      .innerJoin(teams, eq(raceResults.teamId, teams.id))
-      .where(
-        and(
-          eq(raceResults.driverId, driverId),
-          lte(races.season, target.season),
-        ),
-      )
-      .orderBy(desc(races.season), desc(races.round))
-      .limit(1);
-    if (row) teamByDriverId.set(driverId, { teamId: row.teamId, teamName: row.teamName });
+  // per-driver rather than a single windowed query -- but run concurrently,
+  // not one at a time: this function is called once per session type on a
+  // race page (up to 5x), so a sequential loop here multiplies into dozens
+  // of round trips against the remote DB per page load.
+  const fallbackRows = await Promise.all(
+    missingDriverIds.map((driverId) =>
+      db
+        .select({ driverId: raceResults.driverId, teamId: raceResults.teamId, teamName: teams.name })
+        .from(raceResults)
+        .innerJoin(races, eq(raceResults.raceId, races.id))
+        .innerJoin(teams, eq(raceResults.teamId, teams.id))
+        .where(and(eq(raceResults.driverId, driverId), lte(races.season, target.season)))
+        .orderBy(desc(races.season), desc(races.round))
+        .limit(1),
+    ),
+  );
+  for (const rows of fallbackRows) {
+    const [row] = rows;
+    if (row) teamByDriverId.set(row.driverId, { teamId: row.teamId, teamName: row.teamName });
   }
 
   return teamByDriverId;

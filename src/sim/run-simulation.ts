@@ -1,13 +1,20 @@
 import { db } from "@/db";
-import { simulationRuns, simulationResults } from "@/db/schema";
-import { eq, sql, desc } from "drizzle-orm";
+import { simulationRuns, simulationResults, races } from "@/db/schema";
+import { eq, sql, desc, and } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, simulationIterator, type SimulationOutcome } from "./engine";
-import { DEFAULT_ITERATIONS, WIN_PROBABILITY_CALIBRATION } from "./params";
+import { DEFAULT_ITERATIONS, WIN_PROBABILITY_CALIBRATION, MODEL_VERSION } from "./params";
 import { applyCalibration } from "./calibration";
 
 /** How often (in iterations) partial results are flushed to the DB mid-run. */
 const PROGRESS_INTERVAL = 1000;
+
+/** Whether `raceId`'s date is still in the future relative to right now — stamped onto a run at creation so it can be told apart later from a post-race replay. */
+async function isBeforeRaceDay(raceId: number): Promise<boolean> {
+  const [row] = await db.select({ date: races.date }).from(races).where(eq(races.id, raceId));
+  if (!row) return false;
+  return new Date(row.date).getTime() > Date.now();
+}
 
 /**
  * Applies Platt-scaling calibration (see WIN_PROBABILITY_CALIBRATION) to a
@@ -19,7 +26,7 @@ const PROGRESS_INTERVAL = 1000;
  * independently per driver it no longer sums to 1 across the field, so it's
  * renormalized back to a proper distribution afterward.
  */
-function calibrateOutcome(outcome: SimulationOutcome): SimulationOutcome {
+export function calibrateOutcome(outcome: SimulationOutcome): SimulationOutcome {
   const calibratedRaw = outcome.drivers.map((d) => applyCalibration(d.winPct, WIN_PROBABILITY_CALIBRATION));
   const sum = calibratedRaw.reduce((a, b) => a + b, 0);
   return {
@@ -70,7 +77,14 @@ export async function runAndStoreSimulation(
 
   const [run] = await db
     .insert(simulationRuns)
-    .values({ raceId, iterationCount: iterations, status: "running", startedAt: new Date() })
+    .values({
+      raceId,
+      iterationCount: iterations,
+      status: "running",
+      startedAt: new Date(),
+      predictedBeforeRace: await isBeforeRaceDay(raceId),
+      modelVersion: MODEL_VERSION,
+    })
     .returning({ id: simulationRuns.id });
 
   try {
@@ -149,7 +163,14 @@ export async function* streamSimulation(
 
   const [run] = await db
     .insert(simulationRuns)
-    .values({ raceId, iterationCount: iterations, status: "running", startedAt: new Date() })
+    .values({
+      raceId,
+      iterationCount: iterations,
+      status: "running",
+      startedAt: new Date(),
+      predictedBeforeRace: await isBeforeRaceDay(raceId),
+      modelVersion: MODEL_VERSION,
+    })
     .returning({ id: simulationRuns.id });
   const startedAt = new Date();
 
@@ -240,6 +261,49 @@ export async function getLatestSimulation(raceId: number) {
     .select()
     .from(simulationRuns)
     .where(sql`${simulationRuns.raceId} = ${raceId} AND ${simulationRuns.status} = 'completed'`)
+    .orderBy(desc(simulationRuns.completedAt))
+    .limit(1);
+  if (!run) return null;
+
+  const rows = await db
+    .select()
+    .from(simulationResults)
+    .where(eq(simulationResults.simulationRunId, run.id));
+
+  return { run, results: rows };
+}
+
+/**
+ * The most recent completed run that was actually made before this race
+ * happened — the honest historical record of what the model said, untouched
+ * by any tuning that happened afterward. Distinct from getLatestSimulation,
+ * which returns whichever run is newest with no regard for whether it was
+ * made before or after the race; that's fine for "show me a cached
+ * prediction" but wrong for "what did the model call before the result was
+ * known."
+ *
+ * Deliberately the LATEST pre-race run, not the first: re-running the
+ * simulation (say, to refine iteration count) before the race happens is
+ * still refining a genuine prediction, not tainting one — only a run made
+ * after the result is known would be dishonest to show here, and
+ * predictedBeforeRace already excludes those.
+ *
+ * Returns null if no pre-race run exists yet (e.g. every run for this race
+ * so far was made after it already happened) — the caller falls back to a
+ * live re-simulation, clearly labelled as reconstructed rather than
+ * contemporaneous.
+ */
+export async function getFrozenPrediction(raceId: number) {
+  const [run] = await db
+    .select()
+    .from(simulationRuns)
+    .where(
+      and(
+        eq(simulationRuns.raceId, raceId),
+        eq(simulationRuns.status, "completed"),
+        eq(simulationRuns.predictedBeforeRace, true),
+      ),
+    )
     .orderBy(desc(simulationRuns.completedAt))
     .limit(1);
   if (!run) return null;

@@ -12,11 +12,19 @@ import { weightedAverage } from "./decay";
  * pace over the whole season, same 5-race half-life) — this isolates "how
  * has this driver actually gone in races lately" as its own signal, the same
  * way qualiForm isolates recent qualifying skill. See quali-form.ts.
+ *
+ * `includeSprints` folds a sprint weekend's sprint race pace in as an extra,
+ * independent history entry alongside that same round's main race (not a
+ * replacement) -- more recent-form data per driver, same signal. Gated
+ * behind a flag rather than always-on because it changes the production
+ * rating pipeline's output and, per project practice, needs a holdout
+ * backtest before being trusted on by default.
  */
 export async function computeRaceForm(
   targetRaceId: number,
   driverIds: number[],
   lookback = 5,
+  includeSprints = false,
 ): Promise<Map<number, number | null>> {
   const [targetRace] = await db
     .select({ season: races.season, round: races.round })
@@ -39,23 +47,52 @@ export async function computeRaceForm(
   // data, stopping once `lookback` of them are found — an unraced future
   // round (or one whose laps haven't been ingested yet) is skipped rather
   // than counted as "no recent form", the same way qualiForm's loop below
-  // naturally skips rounds with no qualifying data.
-  const paceByRace = new Map<number, Map<number, number>>();
+  // naturally skips rounds with no qualifying data. Each usable round can
+  // contribute up to two history entries (main race, then sprint if present
+  // and enabled) — "lookback" counts rounds walked, not entries collected,
+  // so a sprint round naturally weighs a little more in the average, same as
+  // it would if a driver just raced twice in one weekend. Pace is computed
+  // once per race here and reused for every driver below, not recomputed
+  // per driver.
+  //
+  // Fetched in one parallel batch rather than one race at a time: nearly
+  // every race in a modern season has full data, so the sequential
+  // stop-once-lookback-is-hit loop almost always ends up querying exactly
+  // the first `lookback` candidates anyway -- doing that as N sequential
+  // round trips (each two queries: a session lookup, then that session's
+  // whole laps table) was measured taking ~1.9s for a single prediction.
+  // A small overfetch (lookback + 3) covers the occasional gap (an
+  // unraced/not-yet-ingested round) without falling back to a slow
+  // one-at-a-time retry loop.
+  const candidateRaces = priorRaces.slice(0, lookback + 3);
+  const candidatePaces = await Promise.all(
+    candidateRaces.map((race) =>
+      Promise.all([
+        computeRaceFieldRelativePace(race.id, "r"),
+        includeSprints ? computeRaceFieldRelativePace(race.id, "sprint") : Promise.resolve(new Map<number, number>()),
+      ]),
+    ),
+  );
+
+  const paceByRace = new Map<number, { race: Map<number, number>; sprint: Map<number, number> }>();
   const usableRaces: typeof priorRaces = [];
-  for (const race of priorRaces) {
-    const pace = await computeRaceFieldRelativePace(race.id);
-    if (pace.size === 0) continue;
-    paceByRace.set(race.id, pace);
+  candidateRaces.forEach((race, i) => {
+    if (usableRaces.length >= lookback) return;
+    const [racePace, sprintPace] = candidatePaces[i];
+    if (racePace.size === 0 && sprintPace.size === 0) return;
+    paceByRace.set(race.id, { race: racePace, sprint: sprintPace });
     usableRaces.push(race);
-    if (usableRaces.length >= lookback) break;
-  }
+  });
 
   const result = new Map<number, number | null>();
   for (const driverId of driverIds) {
     const history: number[] = [];
     for (const race of usableRaces) {
-      const v = paceByRace.get(race.id)?.get(driverId);
-      if (v != null) history.push(v);
+      const paces = paceByRace.get(race.id)!;
+      const r = paces.race.get(driverId);
+      if (r != null) history.push(r);
+      const s = paces.sprint.get(driverId);
+      if (s != null) history.push(s);
     }
     result.set(driverId, weightedAverage(history));
   }

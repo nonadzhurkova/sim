@@ -157,49 +157,39 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
           RATHER THAN TRACK-SPECIFIC FORM. THEY WILL SHARPEN AS QUALIFYING RESULTS COME IN.
         </p>
       )}
-      <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {projection.raceOutlooks.map((o) => {
           const teamColor = getTeamColor(o.favouriteTeamName);
           return (
-            <div
-              key={o.raceId}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-800/50 py-1.5 text-sm"
-            >
-              <span className="hud-mono w-9 shrink-0 text-[10px] text-slate-600">
-                R{o.round}
-              </span>
-              <span className="w-40 shrink-0 truncate text-slate-300">{o.circuitName}</span>
-              <span className="text-slate-500">—</span>
-              {o.contenders.map((c, i) => {
-                const driverColor = getTeamColor(
-                  projection.drivers.find((d) => d.id === c.driverId)?.teamName ?? null,
-                );
-                return (
-                  <span key={c.driverId} className="flex items-center gap-1">
-                    {i > 0 && <span className="text-slate-600">·</span>}
-                    <span className="font-semibold" style={{ color: driverColor }}>
-                      {c.driverName}
-                    </span>
-                    <span className="hud-mono text-[11px] text-cyan-300">
-                      ({pct(c.winPct)}%)
-                    </span>
-                  </span>
-                );
-              })}
-              <span className="text-slate-600">·</span>
-              <span className="font-semibold" style={{ color: teamColor }}>
-                {o.favouriteTeamName}
-              </span>
-              <span className="text-slate-500">projected top team</span>
-              <span className="hud-mono text-[11px] text-cyan-300">
+            <div key={o.raceId} className="border border-slate-800/80 bg-slate-950/40 p-4">
+              <p className="hud-mono text-xs text-slate-600">R{o.round}</p>
+              <p className="mt-1 truncate text-base font-semibold text-slate-100">{o.circuitName}</p>
+              <ul className="mt-3 flex flex-col gap-1.5">
+                {o.contenders.map((c, i) => {
+                  const driverColor = getTeamColor(c.teamName);
+                  return (
+                    <li key={c.driverId} className="flex items-center gap-2">
+                      <span className="hud-mono w-5 shrink-0 text-xs text-slate-500">{i + 1}</span>
+                      <span className="h-3 w-[3px] shrink-0" style={{ backgroundColor: driverColor }} />
+                      <span className="flex-1 truncate text-sm text-slate-300">{c.driverName}</span>
+                      <span className="hud-mono shrink-0 text-sm text-cyan-300">{pct(c.winPct)}%</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="hud-mono mt-3 border-t border-slate-800/60 pt-2 text-xs text-slate-500">
+                top team:{" "}
+                <span className="font-semibold" style={{ color: teamColor }}>
+                  {o.favouriteTeamName}
+                </span>{" "}
                 ({pct(o.favouriteTeamPct)}%)
-              </span>
+              </p>
             </div>
           );
         })}
       </div>
       <p className="hud-mono mt-3 text-[9px] text-slate-600">
-        DRIVERS SHOWN ARE THE TOP 3 MOST LIKELY RACE WINNERS BY SIMULATED WIN SHARE.
+        DRIVERS SHOWN ARE THE TOP 6 MOST LIKELY RACE WINNERS BY SIMULATED WIN SHARE.
         &quot;PROJECTED TOP TEAM&quot; IS THE SHARE OF THAT RACE&apos;S POINTS THE TEAM IS
         EXPECTED TO SCORE, NOT A WIN PROBABILITY — A TEAM CAN LEAD ON POINTS WITH BOTH CARS
         SCORING WITHOUT EITHER ONE WINNING.

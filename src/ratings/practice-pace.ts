@@ -163,10 +163,14 @@ function extractRaceSimLaps(sortedLapDurations: number[]): number[] {
 }
 
 /**
- * Field-relative pace for one practice session, normalized by tyre compound.
- * See computePracticePace for the method.
+ * Field-relative pace for one session, normalized by tyre compound: each
+ * driver's best clean lap on a compound vs. the field's median best on that
+ * same compound, weighted by sample size, averaged across compounds used.
+ * Not FP-specific despite living alongside computePracticePace — reused
+ * as-is for sprint qualifying (quali-form.ts), which has no stored
+ * position/gap-to-pole table like main qualifying does, only raw laps.
  */
-async function computeSessionCompoundRelativePace(sessionId: number): Promise<Map<number, number>> {
+export async function computeSessionCompoundRelativePace(sessionId: number): Promise<Map<number, number>> {
   const sessionStints: StintInfo[] = await db
     .select({
       id: stints.id,

@@ -70,8 +70,16 @@ export type RaceOutlook = {
   raceId: number;
   round: number;
   circuitName: string;
-  /** Top 3 most likely race winners, ranked, with each one's win probability in that one race. */
-  contenders: { driverId: number; driverName: string; winPct: number }[];
+  /**
+   * Top 6 most likely race winners, ranked, with each one's win probability
+   * in that one race. Widened from 3 to 6 (2026-09-28): a driver who's
+   * never any single race's top-3 favourite can still rack up real expected
+   * wins over a full remaining calendar (see TitleOdds.expectedWins) simply
+   * by being 4th-6th most likely everywhere -- a top-3 cutoff hid that
+   * driver/team from this list entirely, which read as "zero chance here"
+   * when the truth was closer to "not the top pick, but not nothing."
+   */
+  contenders: { driverId: number; driverName: string; teamName: string | null; winPct: number }[];
   /** Team projected to score the most points at this round. */
   favouriteTeamId: number;
   favouriteTeamName: string;
@@ -607,10 +615,11 @@ export async function* streamSeasonProjection(
           .map((f, i) => ({
             driverId: f.driverId,
             driverName: driverMeta.get(f.driverId)?.name ?? "Unknown",
+            teamName: driverMeta.get(f.driverId)?.teamName ?? null,
             winPct: calibratedSum > 0 ? calibratedRaw[i] / calibratedSum : f.rawWinPct,
           }))
           .sort((a, b) => b.winPct - a.winPct)
-          .slice(0, 3);
+          .slice(0, 6);
 
         let favTeamId = -1;
         let favTeamPoints = 0;

@@ -38,10 +38,12 @@ type OpenF1Weather = {
   rainfall: number;
 };
 
-export const SESSION_TYPE_MAP: Record<string, "fp1" | "fp2" | "fp3" | "q" | "r"> = {
+export const SESSION_TYPE_MAP: Record<string, "fp1" | "fp2" | "fp3" | "sprint_quali" | "sprint" | "q" | "r"> = {
   "Practice 1": "fp1",
   "Practice 2": "fp2",
   "Practice 3": "fp3",
+  "Sprint Qualifying": "sprint_quali",
+  Sprint: "sprint",
   Qualifying: "q",
   Race: "r",
 };
@@ -65,6 +67,22 @@ async function fetchJson<T>(url: string, retries = 5): Promise<T> {
     return res.json() as Promise<T>;
   }
   throw new Error(`OpenF1 request failed after ${retries} retries (429): ${url}`);
+}
+
+/**
+ * Like fetchJson, but a 404 means "OpenF1 has nothing for this resource"
+ * rather than a failure worth aborting the caller over -- returns null
+ * instead of throwing. Some sessions (older ones especially) simply have no
+ * weather readings recorded upstream; that shouldn't take laps/stints
+ * ingestion down with it.
+ */
+async function fetchJsonOptional<T>(url: string, retries = 5): Promise<T | null> {
+  try {
+    return await fetchJson<T>(url);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("(404)")) return null;
+    throw err;
+  }
 }
 
 /** Strips diacritics so "Pérez" and "PEREZ" compare equal. */
@@ -105,19 +123,25 @@ async function buildDriverNumberMap(
   return map;
 }
 
-async function ingestSessionWeather(sessionKey: number): Promise<"dry" | "wet"> {
-  const readings = await fetchJson<OpenF1Weather[]>(
+/**
+ * Returns null (rather than a guessed "dry") when OpenF1 has no weather
+ * readings for this session at all, so the caller can store an honest
+ * "unknown" instead of a fabricated value.
+ */
+async function ingestSessionWeather(sessionKey: number): Promise<"dry" | "wet" | null> {
+  const readings = await fetchJsonOptional<OpenF1Weather[]>(
     `${BASE_URL}/weather?session_key=${sessionKey}`,
   );
+  if (readings == null || readings.length === 0) return null;
   const wasWet = readings.some((r) => r.rainfall > 0);
   return wasWet ? "wet" : "dry";
 }
 
 async function upsertSession(
   raceId: number,
-  sessionType: "fp1" | "fp2" | "fp3" | "q" | "r",
+  sessionType: "fp1" | "fp2" | "fp3" | "sprint_quali" | "sprint" | "q" | "r",
   openf1SessionKey: number,
-  weather: "dry" | "wet",
+  weather: "dry" | "wet" | null,
 ): Promise<number> {
   const [row] = await db
     .insert(sessions)
@@ -241,7 +265,7 @@ export async function ingestSeasonSessions(season: number, onProgress?: Progress
   let processed = 0;
   for (const s of openf1Sessions) {
     const sessionType = SESSION_TYPE_MAP[s.session_name];
-    if (!sessionType) continue; // skip sprint/testing sessions for now
+    if (!sessionType) continue; // skip pre-season testing days ("Day 1/2/3"), not mapped
 
     const sessionDate = s.date_start.slice(0, 10);
     const matchingRace = dbRaces.find((r) => {

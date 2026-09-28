@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import type { FreshnessResult } from "@/ingest/freshness";
 import { ImportButton } from "./import-button";
 import { RelativeTime } from "./relative-time";
@@ -11,8 +14,61 @@ import { RelativeTime } from "./relative-time";
  * any F1 session is running, so "import is impossible at the moment" is a
  * normal recurring state that needs saying out loud — previously it looked
  * identical to "everything is up to date".
+ *
+ * Fetched client-side on mount rather than passed in from the server render:
+ * checkFreshness() makes two live upstream HTTP calls (Jolpica + OpenF1),
+ * which used to block the whole home page's initial render on external API
+ * latency. This loads in after the page is already visible instead.
  */
-export function FreshnessBanner({ freshness }: { freshness: FreshnessResult }) {
+export function FreshnessBanner({ season }: { season: number }) {
+  const [freshness, setFreshness] = useState<FreshnessResult | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function load() {
+    try {
+      // no-store: this must reflect OpenF1's live lock state, which can flip
+      // within minutes (a session starting/ending) -- a cached response here
+      // would keep showing "locked" long after the API actually freed up.
+      const res = await fetch(`/api/freshness?season=${season}`, { cache: "no-store" });
+      if (res.ok) setFreshness(await res.json());
+    } catch {
+      // Leave whatever was last shown in place rather than clearing it.
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [season]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
+
+  const refreshButton = (
+    <button
+      onClick={handleRefresh}
+      disabled={refreshing}
+      title="Re-check for new data"
+      className="hud-mono shrink-0 border border-slate-600/60 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-400 transition-colors hover:border-cyan-600 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {refreshing ? "..." : "⟳ Refresh"}
+    </button>
+  );
+
+  if (!freshness) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-cyan-900/40 bg-[#0b1015]/60 px-4 py-2">
+        <p className="hud-mono text-[11px] text-slate-500">
+          <span className="mr-2 uppercase tracking-widest text-cyan-600">⬤ Checking...</span>
+          Checking for new data
+        </p>
+      </div>
+    );
+  }
+
   const { availability } = freshness.openf1;
   const hasNewData = freshness.jolpica.hasNewData || freshness.openf1.hasNewData;
   const newRaces = freshness.jolpica.upstreamRaceCount - freshness.jolpica.storedRaceCount;
@@ -29,11 +85,14 @@ export function FreshnessBanner({ freshness }: { freshness: FreshnessResult }) {
               : "A session is live"}{" "}
             — OpenF1 blocks all data access, including past sessions, while F1 is running.
           </p>
-          {availability.expectedFreeAt && (
-            <p className="hud-mono text-xs text-red-200">
-              Unlocks <RelativeTime iso={availability.expectedFreeAt} />
-            </p>
-          )}
+          <div className="flex items-center gap-3">
+            {availability.expectedFreeAt && (
+              <p className="hud-mono text-xs text-red-200">
+                Unlocks <RelativeTime iso={availability.expectedFreeAt} />
+              </p>
+            )}
+            {refreshButton}
+          </div>
         </div>
         <p className="hud-mono mt-1 text-[11px] text-slate-500">
           Come back after the session ends, then import to pick up everything at once.
@@ -49,7 +108,10 @@ export function FreshnessBanner({ freshness }: { freshness: FreshnessResult }) {
           <span className="mr-2 uppercase tracking-widest text-slate-500">⬤ OpenF1 Unreachable</span>
           Couldn&apos;t reach the timing API — race results can still be imported.
         </p>
-        <ImportButton season={freshness.season} />
+        <div className="flex items-center gap-3">
+          {refreshButton}
+          <ImportButton season={freshness.season} />
+        </div>
       </div>
     );
   }
@@ -65,7 +127,10 @@ export function FreshnessBanner({ freshness }: { freshness: FreshnessResult }) {
             {freshness.openf1.hasNewData &&
               ` · ${newSessions} new session${newSessions === 1 ? "" : "s"}`}
           </p>
-          <ImportButton season={freshness.season} />
+          <div className="flex items-center gap-3">
+            {refreshButton}
+            <ImportButton season={freshness.season} />
+          </div>
         </div>
         {freshness.nextSession && (
           <p className="hud-mono mt-1 text-[11px] text-slate-500">
@@ -94,7 +159,10 @@ export function FreshnessBanner({ freshness }: { freshness: FreshnessResult }) {
           </>
         )}
       </p>
-      <ImportButton season={freshness.season} />
+      <div className="flex items-center gap-3">
+        {refreshButton}
+        <ImportButton season={freshness.season} />
+      </div>
     </div>
   );
 }

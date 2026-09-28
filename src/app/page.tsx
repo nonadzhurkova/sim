@@ -1,18 +1,22 @@
 import { getLatestSeason, listRacesForSeason } from "@/queries/races";
 import { getCurrentRace } from "@/queries/current-race";
-import { checkFreshness } from "@/ingest/freshness";
+import { getStandings } from "@/queries/standings";
+import { getTopBasePace } from "@/queries/top-base-pace";
 import { FreshnessBanner } from "@/components/freshness-banner";
 import { RaceList } from "@/components/race-list";
 import { StatTile } from "@/components/stat-tile";
 import { TitleOddsPanel } from "@/components/title-odds-panel";
+import { TopDriversPanel } from "@/components/top-drivers-panel";
+import { TopBasePacePanel } from "@/components/top-base-pace-panel";
 
 export default async function Home() {
   const season = await getLatestSeason();
-  const [races, currentRace, freshness] = await Promise.all([
+  const [races, currentRace, standings] = await Promise.all([
     listRacesForSeason(season),
     getCurrentRace(season),
-    checkFreshness(season),
+    getStandings(season),
   ]);
+  const topBasePace = currentRace ? await getTopBasePace(currentRace.id) : [];
 
   const completedRaces = races.filter((r) => new Date(r.date) < new Date()).length;
 
@@ -22,7 +26,7 @@ export default async function Home() {
       <h1 className="mt-1 text-2xl font-bold text-slate-100">F1 Race Predictor</h1>
 
       <div className="mt-6">
-        <FreshnessBanner freshness={freshness} />
+        <FreshnessBanner season={season} />
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -37,12 +41,17 @@ export default async function Home() {
         <StatTile label="Next Race" value={currentRace?.date ?? "—"} />
       </div>
 
-      <div className="mt-6">
-        <TitleOddsPanel season={season} />
+      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <TopDriversPanel drivers={standings.drivers} season={season} />
+        <TopBasePacePanel drivers={topBasePace} />
       </div>
 
-      <div className="mt-6 max-w-3xl">
+      <div className="mt-6">
         <RaceList races={races} currentRaceId={currentRace?.id} />
+      </div>
+
+      <div className="mt-6">
+        <TitleOddsPanel season={season} />
       </div>
     </main>
   );

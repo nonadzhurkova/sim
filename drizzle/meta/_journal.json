@@ -43,6 +43,41 @@
       "when": 1790396242215,
       "tag": "0005_add_pace_uncertainty",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790499889484,
+      "tag": "0006_aspiring_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790500271577,
+      "tag": "0007_brown_sue_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790510201892,
+      "tag": "0008_bored_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790579208864,
+      "tag": "0009_fancy_blur",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790583416868,
+      "tag": "0010_mysterious_human_fly",
+      "breakpoints": true
     }
   ]
 }

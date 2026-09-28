@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   if (!Number.isInteger(raceId) || raceId < 1) {
     return Response.json({ error: "Invalid raceId" }, { status: 400 });
   }
-  if (!sessionType || !["fp1", "fp2", "fp3", "q", "r"].includes(sessionType)) {
+  if (!sessionType || !["fp1", "fp2", "fp3", "sprint_quali", "sprint", "q", "r"].includes(sessionType)) {
     return Response.json({ error: "Invalid session" }, { status: 400 });
   }
   if (!Number.isInteger(target) || !Number.isInteger(rival)) {

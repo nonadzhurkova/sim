@@ -162,13 +162,6 @@ export function StandingsTables({
         </p>
       </div>
 
-      <HudPanel title={`${season} points progression`}>
-        <ProgressionChart series={tab === "drivers" ? driverSeries : teamSeries} />
-        <p className="hud-mono mt-2 text-[9px] text-slate-600">
-          TOP {CHART_ENTRANTS} SHOWN · HOVER A LINE TO ISOLATE IT
-        </p>
-      </HudPanel>
-
       <HudPanel title={tab === "drivers" ? "Drivers' Championship" : "Constructors' Championship"}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-sm">
@@ -275,6 +268,13 @@ export function StandingsTables({
             </tbody>
           </table>
         </div>
+      </HudPanel>
+
+      <HudPanel title={`${season} points progression`}>
+        <ProgressionChart series={tab === "drivers" ? driverSeries : teamSeries} />
+        <p className="hud-mono mt-2 text-[9px] text-slate-600">
+          TOP {CHART_ENTRANTS} SHOWN · HOVER A LINE TO ISOLATE IT
+        </p>
       </HudPanel>
     </div>
   );

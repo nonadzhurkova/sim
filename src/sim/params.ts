@@ -10,6 +10,16 @@
  */
 
 /**
+ * Bump this by hand whenever a change lands here (or in the ratings
+ * pipeline) that would change what a simulation run outputs for the same
+ * race -- a new weight, a calibration refit, a rating formula change, etc.
+ * Stamped onto every stored simulation_runs row (see run-simulation.ts) so a
+ * frozen pre-race prediction can be told apart from one made under
+ * different model settings, without having to diff params.ts by date.
+ */
+export const MODEL_VERSION = "2026-09-28-platt-refit";
+
+/**
  * Relative weight of each pace signal when composing a driver's expected
  * race pace. These are applied to whichever signals are actually present and
  * then renormalized, so a driver missing (say) practice pace isn't penalised
@@ -84,15 +94,17 @@ export const PACE_UNCERTAINTY_WEIGHT = 0;
  * monotonic transform — it cannot change which driver the model picks as
  * favourite, only how honest the reported percentage is.
  *
- * Fitted by `npm run calibrate -- 2024,2025,2026 2024` (1265 pooled
- * per-driver win-probability points across all three ingested seasons).
- * Validated out-of-sample first: fit on 2025+2026 alone, checked cold
- * against the untouched 2024 holdout, mean log loss on that holdout dropped
- * 1.599->1.449 (~9.4%). a=0.67 (<1) confirms the raw model was genuinely overconfident,
- * most visibly in the 20-35% and 60-100% probability bands. Once validated,
- * refit on all three seasons combined for the final production values below.
+ * Fitted by `npm run calibrate` (fit on 2025+2026, 809 pooled per-driver
+ * win-probability points; checked cold against the untouched 2024 holdout).
+ * Refit 2026-09-28 after the qualiForm/qualScore trimmed-mean fix changed
+ * the raw probabilities the original a=0.6698/b=-0.3283 fit was calibrated
+ * against. On the 2024 holdout, mean log loss dropped 1.618->1.474 (~8.9%).
+ * Deliberately NOT refit again on all three seasons pooled afterward (the
+ * old params' docstring described doing that) -- fitting and then
+ * "validating" on data the fit already saw isn't a real holdout, so these
+ * values are the train-on-[2025,2026]/validate-on-2024 fit as-is.
  */
-export const WIN_PROBABILITY_CALIBRATION = { a: 0.6698, b: -0.3283 };
+export const WIN_PROBABILITY_CALIBRATION = { a: 0.7697, b: -0.2061 };
 
 /**
  * Per-lap pace noise (seconds, std dev) applied per driver per iteration.
