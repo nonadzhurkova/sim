@@ -45,6 +45,15 @@ export type TitleOdds = {
   /** Mean final championship position. */
   avgFinalPosition: number;
   /**
+   * Sum of this driver's win probability across every remaining race —
+   * "how many races do we expect them to actually win," distinct from
+   * titlePct (chance of winning the *championship*). Prevents the
+   * race-by-race summary's "who's favoured where" from reading as "this
+   * driver wins every single one" when they're simply the favourite (often
+   * well under 50%) at each remaining race individually.
+   */
+  expectedWins: number;
+  /**
    * Probability of finishing in each championship position, index 0 = P1.
    * Kept because a title can be effectively settled long before the season
    * ends — once the leader is at 100%, the live question is who takes 2nd,
@@ -227,6 +236,7 @@ export async function* streamSeasonProjection(
       titlePct: 0,
       top3Pct: 0,
       avgFinalPosition: d.position,
+      expectedWins: 0,
       positionPct: new Array(TRACKED_POSITIONS).fill(0),
     })),
     teams: standings.teams.map((t) => ({
@@ -240,6 +250,7 @@ export async function* streamSeasonProjection(
       titlePct: 0,
       top3Pct: 0,
       avgFinalPosition: t.position,
+      expectedWins: 0,
       positionPct: new Array(TRACKED_POSITIONS).fill(0),
     })),
   });
@@ -318,6 +329,8 @@ export async function* streamSeasonProjection(
         titlePct: d.position === 1 ? 1 : 0,
         top3Pct: d.position <= 3 ? 1 : 0,
         avgFinalPosition: d.position,
+        // Season is over -- report the real count, not a simulated estimate.
+        expectedWins: d.wins,
         positionPct: Array.from({ length: TRACKED_POSITIONS }, (_, i) => (d.position === i + 1 ? 1 : 0)),
       })),
       teams: standings.teams.map((t) => ({
@@ -331,6 +344,7 @@ export async function* streamSeasonProjection(
         titlePct: t.position === 1 ? 1 : 0,
         top3Pct: t.position <= 3 ? 1 : 0,
         avgFinalPosition: t.position,
+        expectedWins: t.wins,
         positionPct: Array.from({ length: TRACKED_POSITIONS }, (_, i) => (t.position === i + 1 ? 1 : 0)),
       })),
     } };
@@ -503,6 +517,29 @@ export async function* streamSeasonProjection(
   /** Assembles the projection from the tallies so far. */
   function buildProjection(done: number): SeasonProjection {
     const safe = Math.max(1, done);
+
+    // Sum of each driver's calibrated win probability across every race
+    // simulated so far -- "how many races do we expect them to actually
+    // win" (see TitleOdds.expectedWins). Calibrated the same way each race's
+    // own contenders list is below, so the two stay consistent with each
+    // other rather than one being raw hit-rate and the other calibrated.
+    const expectedWinsByDriverId = new Map<number, number>();
+    const expectedWinsByTeamId = new Map<number, number>();
+    for (const winnerHits of raceWinnerHits.values()) {
+      if (winnerHits.size === 0) continue;
+      const fullField = [...winnerHits.entries()].map(([driverId, hits]) => ({ driverId, rawWinPct: hits / safe }));
+      const calibratedRaw = fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION));
+      const calibratedSum = calibratedRaw.reduce((a, b) => a + b, 0);
+      fullField.forEach((f, i) => {
+        const winPct = calibratedSum > 0 ? calibratedRaw[i] / calibratedSum : f.rawWinPct;
+        expectedWinsByDriverId.set(f.driverId, (expectedWinsByDriverId.get(f.driverId) ?? 0) + winPct);
+        const teamId = teamByDriver.get(f.driverId);
+        if (teamId != null) {
+          expectedWinsByTeamId.set(teamId, (expectedWinsByTeamId.get(teamId) ?? 0) + winPct);
+        }
+      });
+    }
+
     const driverOdds: TitleOdds[] = driverIds
       .map((id) => {
         const meta = driverMeta.get(id);
@@ -518,6 +555,7 @@ export async function* streamSeasonProjection(
           titlePct: (dTitle.get(id) ?? 0) / safe,
           top3Pct: (dTop3.get(id) ?? 0) / safe,
           avgFinalPosition: (dPosition.get(id) ?? 0) / safe,
+          expectedWins: expectedWinsByDriverId.get(id) ?? 0,
           positionPct: (dPositionHits.get(id) ?? []).map((h) => h / safe),
         };
       })
@@ -537,6 +575,7 @@ export async function* streamSeasonProjection(
           titlePct: (tTitle.get(id) ?? 0) / safe,
           top3Pct: (tTop3.get(id) ?? 0) / safe,
           avgFinalPosition: (tPosition.get(id) ?? 0) / safe,
+          expectedWins: expectedWinsByTeamId.get(id) ?? 0,
           positionPct: (tPositionHits.get(id) ?? []).map((h) => h / safe),
         };
       })

@@ -31,6 +31,7 @@ function OddsRow({
   currentPoints,
   projectedPoints,
   titlePct,
+  expectedWins,
   positionPct,
   href,
 }: {
@@ -41,6 +42,7 @@ function OddsRow({
   currentPoints: number;
   projectedPoints: number;
   titlePct: number;
+  expectedWins: number;
   positionPct: number[];
   href: string;
 }) {
@@ -82,6 +84,13 @@ function OddsRow({
             projected{gain > 0 ? ` (+${gain})` : ""}
           </span>
         </div>
+        {/* Expected race wins across the remaining calendar — distinct from
+            being the single-race favourite everywhere (which this panel's
+            per-race summary can otherwise misread as "wins every race" when
+            it's really "favoured, often under 50%, race after race"). */}
+        <p className="hud-mono mt-0.5 text-[10px] text-slate-500">
+          <AnimatedNumber value={expectedWins} decimals={1} /> expected win{Math.abs(expectedWins - 1) < 0.05 ? "" : "s"} remaining
+        </p>
       </div>
 
       {/* Stacked distribution across final championship positions. Once a
@@ -360,6 +369,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
                 currentPoints={d.currentPoints}
                 projectedPoints={d.projectedPoints}
                 titlePct={d.titlePct}
+                expectedWins={d.expectedWins}
                 positionPct={d.positionPct}
                 href={`/driver/${d.id}`}
               />
@@ -382,6 +392,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
                 currentPoints={t.currentPoints}
                 projectedPoints={t.projectedPoints}
                 titlePct={t.titlePct}
+                expectedWins={t.expectedWins}
                 positionPct={t.positionPct}
                 href={`/team/${t.id}?season=${projection.season}`}
               />
