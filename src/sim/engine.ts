@@ -1,9 +1,8 @@
 import { createRng, sampleNormal, sampleBernoulli } from "./random";
-import type { SimContext, SimEntrant } from "./entrants";
+import { simulatedQualiPace, type SimContext, type SimEntrant } from "./entrants";
 import {
   PACE_NOISE_STD_DEV,
   QUALI_NOISE_STD_DEV,
-  QUALI_FORM_BLEND,
   GRID_PENALTY_PER_POSITION,
   GRID_PENALTY_DEFAULT,
   RACE_CRAFT_WEIGHT,
@@ -175,17 +174,12 @@ export function* simulationIterator(
       }
     } else {
       // Simulate qualifying: pace plus a wider one-lap noise term, ranked.
-      // Where a driver has recent qualifying form, blend it in — one-lap
-      // pace is a distinguishable skill from race pace, and the grid it
-      // produces then feeds the (heavily weighted) grid penalty below.
+      // See entrants.ts's simulatedQualiPace for the formula and why it uses
+      // racePaceExQualiForm rather than expectedPace (avoids double-counting
+      // qualiForm, which expectedPace already includes).
       for (let i = 0; i < n; i++) {
         order[i] = i;
-        const e = entrants[i];
-        const qualiBase =
-          e.qualiForm != null
-            ? e.expectedPace * (1 - QUALI_FORM_BLEND) + e.qualiForm * QUALI_FORM_BLEND
-            : e.expectedPace;
-        effectivePace[i] = qualiBase + sampleNormal(rng, 0, qualiNoise);
+        effectivePace[i] = simulatedQualiPace(entrants[i], rng, qualiNoise);
       }
       order.sort((a, b) => effectivePace[a] - effectivePace[b]);
       for (let pos = 0; pos < n; pos++) grid[order[pos]] = pos + 1;

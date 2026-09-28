@@ -4,6 +4,8 @@ import { eq, and, asc } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, type ModelOverrides } from "./engine";
 import { computeBayesianSeasonRatings } from "@/ratings/bayesian/compute";
+import type { PACE_WEIGHTS } from "./params";
+import type { AveragingMode } from "@/ratings/quali-form";
 
 /**
  * Which pace model backs a backtest run — see the Bayesian model's own doc
@@ -87,6 +89,16 @@ export async function loadScorableRaces(
   season: number,
   paceModel: PaceModel = "current",
   ensembleWeight: number = DEFAULT_ENSEMBLE_WEIGHT,
+  /** See buildSimContext's own doc comment — validates the sprint-form idea before it's on by default. */
+  includeSprintsInForm = false,
+  /** See buildSimContext's own doc comment — isolates the no-real-grid (pre-qualifying) scenario for weight tuning. */
+  forceSimulatedGrid = false,
+  /** Overrides PACE_WEIGHTS for this load — used to sweep weights against forceSimulatedGrid's isolated scenario. */
+  weightOverrides?: Partial<typeof PACE_WEIGHTS>,
+  /** See buildSimContext's own doc comment — sweeps qualiForm's recency-decay half-life/lookback. */
+  qualiFormHalfLife?: number,
+  qualiFormLookback?: number,
+  qualiFormAveragingMode?: AveragingMode,
 ): Promise<ScorableRace[]> {
   const seasonRaces = await db
     .select({ id: races.id, season: races.season, round: races.round })
@@ -146,7 +158,16 @@ export async function loadScorableRaces(
       );
     }
 
-    const ctx = await buildSimContext(race.id, undefined, basePaceOverride);
+    const ctx = await buildSimContext(
+      race.id,
+      weightOverrides,
+      basePaceOverride,
+      includeSprintsInForm,
+      forceSimulatedGrid,
+      qualiFormHalfLife,
+      qualiFormLookback,
+      qualiFormAveragingMode,
+    );
     if (!ctx) continue;
     out.push({ race, ctx, actual });
   }
@@ -159,8 +180,28 @@ export async function backtestSeason(
   overrides?: ModelOverrides,
   paceModel: PaceModel = "current",
   ensembleWeight: number = DEFAULT_ENSEMBLE_WEIGHT,
+  includeSprintsInForm = false,
+  forceSimulatedGrid = false,
+  weightOverrides?: Partial<typeof PACE_WEIGHTS>,
+  qualiFormHalfLife?: number,
+  qualiFormLookback?: number,
+  qualiFormAveragingMode?: AveragingMode,
 ): Promise<BacktestSummary> {
-  return scoreRaces(await loadScorableRaces(season, paceModel, ensembleWeight), iterations, overrides);
+  return scoreRaces(
+    await loadScorableRaces(
+      season,
+      paceModel,
+      ensembleWeight,
+      includeSprintsInForm,
+      forceSimulatedGrid,
+      weightOverrides,
+      qualiFormHalfLife,
+      qualiFormLookback,
+      qualiFormAveragingMode,
+    ),
+    iterations,
+    overrides,
+  );
 }
 
 export function scoreRaces(

@@ -1,13 +1,12 @@
 import { db } from "@/db";
 import { races, raceResults, circuits } from "@/db/schema";
 import { eq, and, gt, asc, inArray } from "drizzle-orm";
-import { buildSimContext, type SimContext } from "./entrants";
+import { buildSimContext, simulatedQualiPace, type SimContext } from "./entrants";
 import { createRng, sampleNormal, sampleBernoulli } from "./random";
 import { getStandings } from "@/queries/standings";
 import {
   PACE_NOISE_STD_DEV,
   QUALI_NOISE_STD_DEV,
-  QUALI_FORM_BLEND,
   GRID_PENALTY_PER_POSITION,
   GRID_PENALTY_DEFAULT,
   SAFETY_CAR_PROBABILITY,
@@ -114,17 +113,16 @@ function simulateRaceOrder(
 
   // Grid. A future race has no qualifying, so it is simulated every time —
   // which is also what makes each simulated season differ from the last.
+  // See entrants.ts's simulatedQualiPace for the formula -- shared with
+  // engine.ts's single-race simulation so the two can't silently diverge
+  // again (they did once: this copy kept using expectedPace, which
+  // double-counts qualiForm, after engine.ts's copy was fixed).
   if (ctx.hasRealGrid) {
     for (let i = 0; i < n; i++) grid[i] = ctx.entrants[i].gridPosition ?? n;
   } else {
     for (let i = 0; i < n; i++) {
       order[i] = i;
-      const e = ctx.entrants[i];
-      const base =
-        e.qualiForm != null
-          ? e.expectedPace * (1 - QUALI_FORM_BLEND) + e.qualiForm * QUALI_FORM_BLEND
-          : e.expectedPace;
-      pace[i] = base + sampleNormal(rng, 0, QUALI_NOISE_STD_DEV);
+      pace[i] = simulatedQualiPace(ctx.entrants[i], rng, QUALI_NOISE_STD_DEV);
     }
     order.sort((a, b) => pace[a] - pace[b]);
     for (let pos = 0; pos < n; pos++) grid[order[pos]] = pos + 1;

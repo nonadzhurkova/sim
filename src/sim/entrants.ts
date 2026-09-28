@@ -16,11 +16,13 @@ import { computeRacePaceProjection } from "@/ratings/practice-pace";
 import { computeQualiForm } from "@/ratings/quali-form";
 import { computeRaceForm } from "@/ratings/race-form";
 import { computeRaceCraft } from "@/ratings/race-craft";
+import { sampleNormal } from "./random";
 import {
   PACE_WEIGHTS,
   DEFAULT_DNF_RATE,
   MIN_DNF_RATE,
   MAX_DNF_RATE,
+  QUALI_FORM_BLEND,
 } from "./params";
 
 /** One driver's fixed inputs for a simulation run — ratings resolved to numbers. */
@@ -47,6 +49,8 @@ export type SimEntrant = {
   };
   /** Recent qualifying form, used to seed a simulated grid when qualifying hasn't happened. */
   qualiForm: number | null;
+  /** expectedPace's composition without qualiForm folded in — see engine.ts's simulated-grid blend for why this exists separately (avoids double-counting qualiForm). */
+  racePaceExQualiForm: number;
   /** Recent race form — field-relative race pace over the driver's last few races. */
   raceForm: number | null;
   /** Kalman posterior variance on the driver's pace estimate — shrinks with sample size. Scales per-iteration pace noise. */
@@ -74,6 +78,29 @@ export type SimContext = {
   gridIsProvisional: boolean;
   entrants: SimEntrant[];
 };
+
+/**
+ * One driver's simulated one-lap qualifying pace for a single Monte Carlo
+ * iteration -- used by both engine.ts (single-race prediction) and
+ * season.ts (season/championship projection) to simulate a grid when no
+ * real one exists yet. Previously implemented twice, independently; the
+ * season.ts copy kept using `expectedPace` after engine.ts's copy was fixed
+ * on 2026-09-27 to use `racePaceExQualiForm` instead (expectedPace already
+ * has qualiForm folded in at weights.qualiForm, so blending it in again here
+ * double-counts it) -- found and fixed 2026-09-28 by an outside review.
+ * Pulled into one function so a third copy can't silently diverge again.
+ */
+export function simulatedQualiPace(
+  entrant: Pick<SimEntrant, "racePaceExQualiForm" | "qualiForm">,
+  rng: () => number,
+  qualiNoiseStdDev: number,
+): number {
+  const qualiBase =
+    entrant.qualiForm != null
+      ? entrant.racePaceExQualiForm * (1 - QUALI_FORM_BLEND) + entrant.qualiForm * QUALI_FORM_BLEND
+      : entrant.racePaceExQualiForm;
+  return qualiBase + sampleNormal(rng, 0, qualiNoiseStdDev);
+}
 
 /**
  * Combines the available pace signals into one expected-pace number.
@@ -117,6 +144,30 @@ export async function buildSimContext(
    * as-is either way).
    */
   basePaceOverride?: Map<number, number>,
+  /**
+   * Folds sprint-weekend sprint quali/race pace into qualiForm/raceForm as
+   * extra history entries, alongside the round's main sessions. Defaults to
+   * off (production behavior unchanged) — used by the backtest harness to
+   * validate the idea against the 2024 holdout before it's trusted on.
+   */
+  includeSprintsInForm = false,
+  /**
+   * Ignores a real/derived grid even if one exists, forcing the same
+   * simulated-qualifying path a genuine pre-qualifying prediction uses —
+   * used by the backtest harness to isolate and validate the no-real-grid
+   * scenario specifically (weight tuning for it needs to be measured against
+   * that scenario alone, not diluted by races that already have a real grid).
+   */
+  forceSimulatedGrid = false,
+  /**
+   * See ratings/quali-form.ts's computeQualiForm — sweeps the recency-decay
+   * half-life for qualifying form specifically. Not yet validated; defaults
+   * to today's behavior (half-life 5, lookback 5).
+   */
+  qualiFormHalfLife?: number,
+  qualiFormLookback?: number,
+  /** See ratings/quali-form.ts's computeQualiForm — averaging mode override for the backtest harness; production leaves this unset so computeQualiForm's own "trimmed" default applies. */
+  qualiFormAveragingMode?: import("@/ratings/quali-form").AveragingMode,
 ): Promise<SimContext | null> {
   const weights = { ...PACE_WEIGHTS, ...weightOverrides };
   const [race] = await db
@@ -192,18 +243,27 @@ export async function buildSimContext(
     derivedGrid = await deriveGridFromQualifyingLaps(raceId);
   }
 
-  const gridByDriver =
-    realGridByDriver.size > 0
+  // The field (who's racing) still comes from the real grid/qualifying data
+  // even under forceSimulatedGrid -- only the grid *order* is hidden, so the
+  // backtest isolates "how well would the model have ranked this field
+  // without knowing qualifying" rather than also hiding who showed up.
+  const knownFieldIds = new Set([...realGridByDriver.keys(), ...qualiByDriver.keys(), ...derivedGrid.keys()]);
+
+  const gridByDriver = forceSimulatedGrid
+    ? new Map<number, number>()
+    : realGridByDriver.size > 0
       ? realGridByDriver
       : qualiByDriver.size > 0
         ? qualiByDriver
         : derivedGrid;
   const hasRealGrid = gridByDriver.size > 0;
   const gridIsProvisional =
-    realGridByDriver.size === 0 && qualiByDriver.size === 0 && derivedGrid.size > 0;
+    !forceSimulatedGrid && realGridByDriver.size === 0 && qualiByDriver.size === 0 && derivedGrid.size > 0;
 
   let fieldDriverIds: Set<number>;
-  if (hasRealGrid) {
+  if (forceSimulatedGrid && knownFieldIds.size > 0) {
+    fieldDriverIds = knownFieldIds;
+  } else if (hasRealGrid) {
     fieldDriverIds = new Set(gridByDriver.keys());
   } else {
     const active = ratingRows.filter(
@@ -228,8 +288,8 @@ export async function buildSimContext(
   const fieldDriverIdList = fieldRatings.map((r) => r.driverId);
   const [teamsByDriver, qualiFormByDriver, raceFormByDriver, raceCraftByDriver] = await Promise.all([
     getDriverTeamsAsOf(raceId, fieldDriverIdList),
-    computeQualiForm(raceId, fieldDriverIdList),
-    computeRaceForm(raceId, fieldDriverIdList),
+    computeQualiForm(raceId, fieldDriverIdList, qualiFormLookback ?? 5, includeSprintsInForm, qualiFormHalfLife, qualiFormAveragingMode),
+    computeRaceForm(raceId, fieldDriverIdList, 5, includeSprintsInForm),
     computeRaceCraft(race.season, race.round),
   ]);
   const carStrengthByTeam = new Map(
@@ -248,18 +308,24 @@ export async function buildSimContext(
     const raceCraft = raceCraftByDriver.get(r.driverId)?.value ?? null;
 
     const basePace = basePaceOverride?.get(r.driverId) ?? r.basePace;
-    const expectedPace = composePace([
+    const paceParts = [
       { value: basePace, weight: weights.basePace },
       { value: r.practicePace, weight: weights.practicePace },
       { value: projection, weight: weights.racePaceProjection },
       { value: carStrength, weight: weights.carStrength },
       { value: r.trackAffinity, weight: weights.trackAffinity },
-      { value: qualiForm, weight: weights.qualiForm },
       { value: raceForm, weight: weights.raceForm },
-    ]);
+    ];
+    const expectedPace = composePace([...paceParts, { value: qualiForm, weight: weights.qualiForm }]);
     // A driver with no pace signal at all can't be meaningfully simulated;
     // including them at an assumed pace would invent a result from nothing.
     if (expectedPace == null) continue;
+    // Same composite but without qualiForm, for the engine's simulated-grid
+    // blend (QUALI_FORM_BLEND) to mix qualiForm into. Blending against
+    // expectedPace itself would double-count qualiForm -- it's already
+    // folded in above at weights.qualiForm, so a driver's simulated grid
+    // would get their qualifying-form advantage twice over.
+    const racePaceExQualiForm = composePace(paceParts) ?? expectedPace;
 
     const rawDnf = r.driverReliability ?? DEFAULT_DNF_RATE;
     entrants.push({
@@ -268,6 +334,7 @@ export async function buildSimContext(
       teamId: team?.teamId ?? null,
       teamName: team?.teamName ?? null,
       expectedPace,
+      racePaceExQualiForm,
       dnfRate: Math.min(MAX_DNF_RATE, Math.max(MIN_DNF_RATE, rawDnf)),
       gridPosition: gridByDriver.get(r.driverId) ?? null,
       qualiForm,
@@ -305,7 +372,7 @@ export async function buildSimContext(
  * which do occur in the ingested data) are discarded against the session
  * median before ranking, the same guard the session-pace tables use.
  */
-async function deriveGridFromQualifyingLaps(raceId: number): Promise<Map<number, number>> {
+export async function deriveGridFromQualifyingLaps(raceId: number): Promise<Map<number, number>> {
   const [qSession] = await db
     .select({ id: sessions.id })
     .from(sessions)

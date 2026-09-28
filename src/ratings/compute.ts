@@ -9,14 +9,34 @@ import { computeTeamStrength } from "./team-strength";
 import { computeTrackAffinity } from "./track-affinity";
 import { computePracticePace } from "./practice-pace";
 import { computeBayesianSeasonRatings } from "./bayesian/compute";
+import { trimmedWeightedAverage, weightedMedian } from "./decay";
 import { qualifyingResults } from "@/db/schema";
+import type { AveragingMode } from "./quali-form";
 
 /**
  * Computes and stores driver_ratings + team_ratings for every race in
  * `season`, in chronological order, using only data strictly before each
  * race (no lookahead — required for valid backtesting later).
  */
-export async function computeSeasonRatings(season: number, onProgress?: ProgressReporter) {
+export async function computeSeasonRatings(
+  season: number,
+  onProgress?: ProgressReporter,
+  /**
+   * How basePace's qualifying component (qualScore) combines a driver's
+   * per-race gapToPole history. Adopted as "trimmed" (2026-09-28) alongside
+   * computeQualiForm's own trim, so a single outlier qualifying session
+   * doesn't enter the model twice over at full weight (once via qualiForm,
+   * once via basePace) while only one of the two is protected. Validated
+   * together on 2025+2026 pooled: logloss improved further (1.210->1.189,
+   * a larger gain than qualiForm's trim alone), though top1 (56.4%->53.8%)
+   * moved back toward baseline -- read as noise at n=39 races (top1 moves
+   * in whole-race increments, ~2.6 points each, so a 1-race swing either
+   * way isn't a reliable signal; logloss uses every driver's probability in
+   * every race and is far more stable). See project memory for the full
+   * writeup and the case for treating logloss as primary here.
+   */
+  qualScoreAveragingMode: AveragingMode = "trimmed",
+) {
   const seasonRaces = await db
     .select({ id: races.id, season: races.season, round: races.round })
     .from(races)
@@ -49,6 +69,15 @@ export async function computeSeasonRatings(season: number, onProgress?: Progress
   const qualRows = await db
     .select({ raceId: qualifyingResults.raceId, driverId: qualifyingResults.driverId, gapToPole: qualifyingResults.gapToPole })
     .from(qualifyingResults);
+  // Deliberately the RAW gapToPole, not field-relative like every other pace
+  // signal -- tried switching this to computeFieldRelativeQualiGaps (same
+  // normalization quali-form.ts uses) on 2026-09-28, reasoning it should be
+  // more consistent and outlier-resistant. Backtested on the 2024 holdout:
+  // real-grid top3 accuracy regressed 87.5%->83.3%, a genuine loss, for no
+  // compensating gain elsewhere (logloss/top1/rankCorr all flat or trivial).
+  // Reverted. See project memory (basepace-field-relative-qual-rejected.md)
+  // before trying this again -- the raw-gap version, despite looking
+  // structurally inconsistent, is what's actually validated to work.
   const qualLookup = new Map<string, number>();
   for (const q of qualRows) {
     if (q.gapToPole != null) qualLookup.set(`${q.raceId}:${q.driverId}`, q.gapToPole);
@@ -65,12 +94,17 @@ export async function computeSeasonRatings(season: number, onProgress?: Progress
       const qualHistory: number[] = [];
       const paceHistory: number[] = [];
       for (const race of priorRaces) {
-        const gap = qualLookup.get(`${race.id}:${driverId}`);
-        if (gap != null) qualHistory.push(gap);
+        const relativeGap = qualLookup.get(`${race.id}:${driverId}`);
+        if (relativeGap != null) qualHistory.push(relativeGap);
         const pace = racePaceByRace.get(race.id)?.get(driverId);
         if (pace != null) paceHistory.push(pace);
       }
-      const qualScore = weightedAverage(qualHistory);
+      const qualScore =
+        qualScoreAveragingMode === "trimmed"
+          ? trimmedWeightedAverage(qualHistory)
+          : qualScoreAveragingMode === "median"
+            ? weightedMedian(qualHistory)
+            : weightedAverage(qualHistory);
       const paceScore = weightedAverage(paceHistory);
       if (qualScore == null && paceScore == null) basePaceByDriver.set(driverId, null);
       else if (qualScore == null) basePaceByDriver.set(driverId, paceScore);
