@@ -100,7 +100,7 @@ export function ImportButton({ season }: { season: number }) {
             <span className="hud-ellipsis" />
           </p>
           {message && (
-            <p className="hud-mono truncate text-[10px] text-slate-500">{message}</p>
+            <p className="hud-mono truncate text-[10px] text-slate-400">{message}</p>
           )}
           <div className="relative mt-0.5 h-1 w-40 overflow-hidden bg-slate-900/80">
             <div className="hud-pulse h-full w-full bg-cyan-400 shadow-[0_0_8px_0_rgba(34,211,238,0.7)]" />
@@ -110,7 +110,7 @@ export function ImportButton({ season }: { season: number }) {
       )}
 
       {state === "done" && summary && (
-        <p className="hud-mono text-[11px] text-slate-500">
+        <p className="hud-mono text-[11px] text-slate-400">
           Races {summary.before.races}→{summary.after.races} · Sessions{" "}
           {summary.before.sessions}→{summary.after.sessions}
         </p>

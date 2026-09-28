@@ -7,9 +7,7 @@ import { RaceHeader } from "@/components/race-header";
 import { SessionSchedulePanel } from "@/components/session-schedule-panel";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
-import { RatingsPanel } from "@/components/ratings-panel";
-import { PredictionPanel } from "@/components/prediction-panel";
-import { XgboostPredictionPanel } from "@/components/xgboost-prediction-panel";
+import { PredictionTabs } from "@/components/prediction-tabs";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
 import { CarPerformancePanel } from "@/components/car-performance-panel";
@@ -63,6 +61,12 @@ export default async function RacePage({
           >
             Telemetry Analysis →
           </Link>
+          <Link
+            href={`/model?race=${season}-${round}`}
+            className="hud-mono border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+          >
+            Model Ratings →
+          </Link>
         </div>
       </div>
 
@@ -70,29 +74,16 @@ export default async function RacePage({
           for, before/during/after the race alike. Shown even for already-run
           races, deliberately: running the model against a known result is
           how it gets validated, so hiding it after the fact would remove the
-          only way to judge whether it works. */}
+          only way to judge whether it works. Tabbed rather than stacked: two
+          panels with similar titles back-to-back read as duplicates, not as
+          "the real prediction" plus "a second opinion." */}
       <section className="mt-6">
-        <PredictionPanel raceId={race.id} />
-      </section>
-
-      <section className="mt-6">
-        <XgboostPredictionPanel raceId={race.id} />
+        <PredictionTabs raceId={race.id} />
       </section>
 
       <div className="mt-6">
         <SessionSchedulePanel raceId={race.id} />
       </div>
-
-      {comparison && (
-        <section className="mt-8">
-          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-            {"//"} Ratings
-          </p>
-          <div className="mt-4">
-            <RatingsPanel snapshot={comparison.thisYear} />
-          </div>
-        </section>
-      )}
 
       <section className="mt-8">
         <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
@@ -103,7 +94,7 @@ export default async function RacePage({
             <SessionPaceTable key={type} title={SESSION_LABELS[type] ?? type} rows={rows} />
           ))}
           {Object.keys(sessionPace).length === 0 && (
-            <p className="hud-mono text-xs text-slate-500">
+            <p className="hud-mono text-xs text-slate-400">
               NO SESSION DATA YET FOR THIS RACE WEEKEND.
             </p>
           )}

@@ -12,7 +12,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
   return (
     <HudPanel title="Drivers' Championship — Top 5">
       {top5.length === 0 ? (
-        <p className="hud-mono text-xs text-slate-500">NO STANDINGS DATA FOR {season} YET.</p>
+        <p className="hud-mono text-xs text-slate-400">NO STANDINGS DATA FOR {season} YET.</p>
       ) : (
         <>
           <ul className="flex flex-col gap-1">
@@ -25,7 +25,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
                     href={`/driver/${d.driverId}`}
                     className="flex items-center gap-3 border-t border-slate-800/60 py-2 transition-colors hover:bg-cyan-950/20 first:border-t-0"
                   >
-                    <span className={`hud-mono w-5 shrink-0 text-base font-bold ${MEDAL_COLORS[i] ?? "text-slate-500"}`}>
+                    <span className={`hud-mono w-5 shrink-0 text-base font-bold ${MEDAL_COLORS[i] ?? "text-slate-400"}`}>
                       {i + 1}
                     </span>
                     {d.headshotUrl ? (
@@ -55,7 +55,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
                         <span className="hud-mono shrink-0 text-sm font-bold text-cyan-300">{d.points}</span>
                       </div>
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="hud-mono truncate text-[10px] text-slate-500">{d.teamName}</span>
+                        <span className="hud-mono truncate text-[10px] text-slate-400">{d.teamName}</span>
                         <div className="relative h-1.5 flex-1 overflow-hidden bg-slate-900/60">
                           <div
                             className="hud-bar-fill h-full"

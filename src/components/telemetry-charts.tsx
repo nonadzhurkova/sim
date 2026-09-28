@@ -47,13 +47,13 @@ export function PhaseDeltaChart({
   rivalLabel: string;
 }) {
   if (phases.length === 0) {
-    return <p className="hud-mono text-xs text-slate-500">NO PHASE DATA</p>;
+    return <p className="hud-mono text-xs text-slate-400">NO PHASE DATA</p>;
   }
   const maxAbs = Math.max(...phases.map((p) => Math.abs(p.delta)), 0.1);
 
   return (
     <div>
-      <p className="hud-mono mb-3 text-[10px] uppercase tracking-widest text-slate-500">
+      <p className="hud-mono mb-3 text-[10px] uppercase tracking-widest text-slate-400">
         <span className="text-red-400">▶ right = {targetLabel} loses</span>
         {"  ·  "}
         <span className="text-green-400">◀ left = {targetLabel} gains on {rivalLabel}</span>
@@ -134,7 +134,7 @@ export function DeltaTraceChart({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
           Cumulative delta around the lap
         </p>
         <p className="hud-mono text-[10px] text-slate-600">
@@ -209,7 +209,7 @@ export function SpeedTraceChart({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
           Speed trace
         </p>
         <div className="hud-mono flex gap-3 text-[10px]">
@@ -248,7 +248,7 @@ export function SectorBars({
         const height = (Math.abs(s.delta) / maxAbs) * 100;
         return (
           <div key={s.sector} className="text-center">
-            <div className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+            <div className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
               Sector {s.sector}
             </div>
             <div className="relative mt-2 flex h-20 items-center justify-center bg-slate-900/50">
@@ -315,7 +315,7 @@ export function InputTraces({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
           Driver inputs
         </p>
         <div className="hud-mono flex gap-3 text-[10px]">

@@ -28,12 +28,12 @@ function SessionCard({ session, now }: { session: ScheduledSession; now: number 
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className={`text-sm ${isLive ? "font-semibold text-cyan-300" : ended ? "text-slate-500" : "text-slate-200"}`}>
+        <span className={`text-sm ${isLive ? "font-semibold text-cyan-300" : ended ? "text-slate-400" : "text-slate-200"}`}>
           {session.label}
         </span>
         {isLive && <span className="hud-mono text-[10px] uppercase tracking-wider text-cyan-400">● live</span>}
       </div>
-      <div className="hud-mono flex flex-col text-[11px] text-slate-500">
+      <div className="hud-mono flex flex-col text-[11px] text-slate-400">
         <LocalDateTime iso={ended ? session.endsAt! : session.startsAt} />
         <span>
           {ended ? (
@@ -79,7 +79,7 @@ export function SessionSchedulePanel({ raceId }: { raceId: number }) {
   if (result.status === "locked") {
     return (
       <HudPanel title="Weekend Schedule">
-        <p className="hud-mono text-[11px] text-slate-500">
+        <p className="hud-mono text-[11px] text-slate-400">
           Schedule hidden while a session is live — OpenF1 blocks all access until it ends.
         </p>
       </HudPanel>
@@ -89,7 +89,7 @@ export function SessionSchedulePanel({ raceId }: { raceId: number }) {
   if (result.status === "unreachable") {
     return (
       <HudPanel title="Weekend Schedule">
-        <p className="hud-mono text-[11px] text-slate-500">Couldn&apos;t reach the timing API.</p>
+        <p className="hud-mono text-[11px] text-slate-400">Couldn&apos;t reach the timing API.</p>
       </HudPanel>
     );
   }

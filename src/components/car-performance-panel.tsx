@@ -6,7 +6,7 @@ const TRACK_MAX_SECONDS = 1.5; // horizontal scale cap, matches the broadcast gr
 
 function TrendArrow({ trend, positionsChanged }: { trend: CarPerformanceRow["trend"]; positionsChanged: number | null }) {
   if (trend == null || positionsChanged == null) return <span className="hud-mono w-6 text-xs text-slate-600">—</span>;
-  if (trend === "same") return <span className="hud-mono w-6 text-xs text-slate-500">–</span>;
+  if (trend === "same") return <span className="hud-mono w-6 text-xs text-slate-400">–</span>;
   const isUp = trend === "up";
   return (
     <span className={`hud-mono flex w-6 items-center gap-0.5 text-xs ${isUp ? "text-green-400" : "text-red-400"}`}>
@@ -26,7 +26,7 @@ export function CarPerformancePanel({
   if (rows.length === 0) {
     return (
       <HudPanel title={`Car Performance — ${seasonLabel}`}>
-        <p className="hud-mono text-xs text-slate-500">NO TEAM RATING DATA YET</p>
+        <p className="hud-mono text-xs text-slate-400">NO TEAM RATING DATA YET</p>
       </HudPanel>
     );
   }

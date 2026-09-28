@@ -13,7 +13,7 @@ export function RatingsPanel({ snapshot }: { snapshot: RaceWeekendSnapshot }) {
   if (sortedDrivers.length === 0 && sortedTeams.length === 0) {
     return (
       <HudPanel title="Ratings">
-        <p className="hud-mono text-xs text-slate-500">NO RATING HISTORY YET (FIRST RACE OF SEASON)</p>
+        <p className="hud-mono text-xs text-slate-400">NO RATING HISTORY YET (FIRST RACE OF SEASON)</p>
       </HudPanel>
     );
   }

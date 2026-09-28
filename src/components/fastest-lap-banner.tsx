@@ -16,7 +16,7 @@ function LapStat({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">{label}</span>
+      <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">{label}</span>
       {pace ? (
         <div className="flex items-baseline gap-2">
           <span className="hud-mono text-lg font-bold text-cyan-300">{formatLapTime(pace.bestLap)}</span>

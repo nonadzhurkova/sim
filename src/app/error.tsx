@@ -24,7 +24,7 @@ export default function GlobalError({
     <main className="mx-auto flex max-w-[1600px] flex-col items-start gap-4 px-6 py-16 lg:px-10">
       <p className="hud-mono text-xs uppercase tracking-widest text-red-400">System Fault</p>
       <h1 className="text-2xl font-bold text-slate-100">Something went wrong</h1>
-      <p className="hud-mono max-w-xl text-xs leading-relaxed text-slate-500">
+      <p className="hud-mono max-w-xl text-xs leading-relaxed text-slate-400">
         {error.message || "An unexpected error occurred while rendering this page."}
       </p>
       <button

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { races, circuits } from "@/db/schema";
@@ -9,6 +8,7 @@ import {
   type DriverRaceRow,
 } from "@/queries/driver-profile";
 import { DriverProfilePanel } from "@/components/driver-profile-panel";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 /**
  * Driver page: career and recent-form statistics.
@@ -54,12 +54,7 @@ export default async function DriverPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <Link
-        href="/drivers"
-        className="hud-mono text-xs uppercase tracking-widest text-cyan-500 hover:text-cyan-300"
-      >
-        ← All drivers
-      </Link>
+      <Breadcrumbs items={[{ label: "Drivers", href: "/drivers" }, { label: profile.name }]} />
       <div className="mt-4">
         <DriverProfilePanel
           profile={profile}

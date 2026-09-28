@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { getLatestSeason } from "@/queries/races";
 import { getCurrentRace } from "@/queries/current-race";
+import { NavLinks } from "./nav-links";
 
 /**
  * Server component (no "use client") so the "Next Race" shortcut can be
  * resolved directly from the DB rather than fetched client-side — the nav
  * renders once per request alongside the rest of the server-rendered shell.
+ * The link list itself lives in NavLinks (a client component), since active-
+ * link highlighting needs the current pathname.
  */
 export async function NavBar() {
   const season = await getLatestSeason();
@@ -18,18 +21,7 @@ export async function NavBar() {
           F1// PREDICTOR
         </Link>
         <nav className="flex items-center gap-4 text-xs uppercase tracking-wider text-slate-400">
-          <Link href="/" className="hover:text-cyan-300">
-            Home
-          </Link>
-          <Link href="/races" className="hover:text-cyan-300">
-            Races
-          </Link>
-          <Link href="/standings" className="hover:text-cyan-300">
-            Standings
-          </Link>
-          <Link href="/drivers" className="hover:text-cyan-300">
-            Drivers
-          </Link>
+          <NavLinks />
           {currentRace && (
             <Link
               href={`/race/${currentRace.season}/${currentRace.round}`}

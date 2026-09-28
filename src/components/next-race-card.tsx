@@ -42,7 +42,7 @@ export function NextRaceCard({
             <span className="h-9 w-14 shrink-0 rounded-sm border border-slate-800 bg-slate-900" />
           )}
           <div>
-            <p className="hud-mono text-[11px] text-slate-500">
+            <p className="hud-mono text-[11px] text-slate-400">
               R{String(race.round).padStart(2, "0")} · {race.date}
             </p>
             <p className="text-lg font-semibold text-slate-100">{race.circuitName}</p>
@@ -62,7 +62,7 @@ export function NextRaceCard({
             const color = getTeamColor(driverTeamNames.get(c.driverId) ?? null);
             return (
               <div key={c.driverId} className="flex items-center gap-2 border border-slate-800/80 bg-slate-950/40 px-3 py-2">
-                <span className="hud-mono text-xs text-slate-500">#{i + 1}</span>
+                <span className="hud-mono text-xs text-slate-400">#{i + 1}</span>
                 <span className="h-3 w-[3px] shrink-0" style={{ backgroundColor: color }} />
                 <span className="flex-1 truncate text-sm text-slate-200">{c.driverName}</span>
                 <span className="hud-mono text-sm text-cyan-300">{pct(c.winPct)}%</span>
@@ -71,7 +71,7 @@ export function NextRaceCard({
           })}
         </div>
       ) : (
-        <p className="hud-mono mt-4 text-[11px] text-slate-500">
+        <p className="hud-mono mt-4 text-[11px] text-slate-400">
           NO PREDICTION RUN FOR THIS RACE YET — OPEN THE RACE PAGE TO RUN ONE.
         </p>
       )}

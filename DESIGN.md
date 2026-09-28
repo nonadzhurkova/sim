@@ -4,8 +4,9 @@ Written for an external reviewer (another AI or a person) being asked: **"is the
 organization, and visual design of this app optimal — what would you improve?"** This is not a technical/model
 documentation file (see `README.md` for that); it covers pages, navigation, components, and theming/branding only.
 
-The author's own standing concern, stated going in: *"the components, the order, the page, the nav are not optimal"* —
-this doc exists to give a reviewer enough concrete detail to have an opinion about that, not to pre-argue a conclusion.
+This is the second pass. A first pass (see git history) surfaced concrete issues and a reviewer gave feedback in two
+rounds ("high — must be changed" and "medium — better to be changed"); every item from both rounds has since been
+acted on. This document describes the *current* state after those changes, plus what's still open.
 
 ---
 
@@ -13,190 +14,156 @@ this doc exists to give a reviewer enough concrete detail to have an opinion abo
 
 | Route | File | Purpose |
 |---|---|---|
-| `/` | `src/app/page.tsx` | Home dashboard — season status, stat tiles, top drivers/pace panels, race calendar, championship odds. |
+| `/` | `src/app/page.tsx` | Home dashboard — next race first, championship odds, calendar, top drivers. |
+| `/races` | `src/app/races/page.tsx` | Full season calendar as its own page, with a season picker. *(new)* |
 | `/standings` | `src/app/standings/page.tsx` | Championship tables (drivers + teams) for a season, with a season picker. |
-| `/drivers` | `src/app/drivers/page.tsx` | Grid/index of all drivers in the latest season. |
+| `/drivers` | `src/app/drivers/page.tsx` | Table of every driver this season: team, points, base pace, DNF rate. *(rebuilt — was a card grid)* |
 | `/driver/[driverId]` | `src/app/driver/[driverId]/page.tsx` | Individual driver profile — career/recent-form stats, optional circuit history. |
-| `/team/[teamId]` | `src/app/team/[teamId]/page.tsx` | Constructor page — season standing, both drivers, full season results table. |
-| `/race/[season]/[round]` | `src/app/race/[season]/[round]/page.tsx` | Main race-weekend dashboard (the app's most detailed page). |
+| `/team/[teamId]` | `src/app/team/[teamId]/page.tsx` | Constructor page — season standing, both drivers, full season results table, now with a season picker. |
+| `/race/[season]/[round]` | `src/app/race/[season]/[round]/page.tsx` | Main race-weekend dashboard — prediction first, then schedule/session/car data. |
 | `/race/[season]/[round]/analysis` | `.../analysis/page.tsx` | Telemetry analysis subpage, live-fetched from OpenF1 per selected team. |
-| `/race/[season]/[round]/prediction-review` | `.../prediction-review/page.tsx` | Post-hoc comparison of the model's prediction vs. actual race result. |
+| `/race/[season]/[round]/prediction-review` | `.../prediction-review/page.tsx` | Merged Monte Carlo + XGBoost comparison against the actual result, sorted by finishing order. |
+| `/model` | `src/app/model/page.tsx` | Developer/model-internals page: data freshness, imports, driver/team ratings for a chosen race. *(new)* |
 
-There is exactly **one** `layout.tsx` in the app — the root layout. No nested route segment defines its own
-`layout.tsx`, `loading.tsx`, or `error.tsx` (confirmed empty for all three patterns outside the root).
+`error.tsx` (root) and `loading.tsx` (race detail + analysis routes) now exist — previously there were none anywhere
+in the app.
 
 ---
 
 ## 2. Navigation
 
-`src/app/layout.tsx` renders `<NavBar />` unconditionally above `{children}`, so every page gets the same header.
+`src/components/nav-bar.tsx` (server component, fetches the next-race shortcut from the DB) renders
+`src/components/nav-links.tsx` (client component) for the actual link list, so active-link highlighting can read
+`usePathname()` without making the whole nav bar client-side.
 
-`src/components/nav-bar.tsx` is the entire nav implementation:
-- A `<header>` with `border-b border-cyan-900/60 bg-[#05070a]/90 backdrop-blur` — **not sticky/fixed**, it scrolls
-  away with the page.
-- Left: a logo/home link styled `F1// PREDICTOR` in monospace cyan.
-- Right: exactly **three** links — `Home` (`/`), `Standings` (`/standings`), `Drivers` (`/drivers`).
+- Left: logo/home link, `F1// PREDICTOR`.
+- Right: `Home`, `Races`, `Standings`, `Drivers` — each highlighted (`text-cyan-300`) when active; `/` matches
+  exactly, the others match their own subpaths too (e.g. `/drivers` stays lit while viewing `/driver/44`).
+- A `Next Race →` button, resolved server-side, always links straight to the current/upcoming race.
+- Still **not sticky/fixed** — scrolls away with the page. Still **no mobile/hamburger treatment** at any
+  breakpoint (accepted as-is: three text links plus one button fit a narrow viewport without needing to collapse).
 
-What's **not** in the nav:
-- No link to any race page, and no races/schedule index page at all — the only way into `/race/[season]/[round]`
-  is clicking through from the home page's race calendar or "Current Round" stat tile.
-- No link to individual driver or team pages (reached only by clicking through from `/drivers`, `/standings`, or a
-  race page).
-- No breadcrumb. Back-navigation is ad hoc per page — each deep page hand-rolls its own "← back" link with a
-  repeated class string (see §6).
-- **No mobile/responsive treatment**: no hamburger menu, no collapsing behavior at any breakpoint. On a narrow
-  viewport it's just a shrinking flex row.
-- **No active-route indicator** — a user on `/standings` sees the same unstyled `Standings` link as everywhere else.
+Back-navigation on deep pages now goes through a shared `Breadcrumbs` component (`src/components/breadcrumbs.tsx`)
+instead of four independently copy-pasted "← back" links — used on the driver, team, analysis, and
+prediction-review pages, e.g. `Races / Singapore / Prediction Review`.
 
 ---
 
-## 3. Component inventory (`src/components/`, 30 files)
+## 3. Component inventory (`src/components/`)
 
-**Shared primitives (~6)**
-`hud-panel.tsx` (the base "card" — see §4), `stat-tile.tsx`, `team-badge.tsx` (custom geometric team marks, not
-real logos — see note in §6), `animated-number.tsx`, `relative-time.tsx`, `local-date-time.tsx`.
+**Shared primitives**
+`hud-panel.tsx`, `stat-tile.tsx`, `team-badge.tsx`, `animated-number.tsx`, `relative-time.tsx`,
+`local-date-time.tsx`, `breadcrumbs.tsx` *(new)*, `season-picker.tsx` *(new — replaces three independently
+hand-rolled season-picker implementations)*.
 
-**Navigation (1)**
-`nav-bar.tsx`.
+**Navigation**
+`nav-bar.tsx`, `nav-links.tsx` *(new, split out of nav-bar.tsx for the active-state client boundary)*.
 
-**Home-page panels (~6)**
-`freshness-banner.tsx`, `import-button.tsx`, `race-list.tsx`, `title-odds-panel.tsx`, `top-drivers-panel.tsx`,
-`top-base-pace-panel.tsx`.
+**Home-page panels**
+`race-list.tsx`, `title-odds-panel.tsx`, `top-drivers-panel.tsx`, `next-race-card.tsx` *(new)*.
+`freshness-banner.tsx`/`import-button.tsx` and `top-base-pace-panel.tsx` moved off the home page — the freshness
+banner now lives on `/model`; the base-pace panel was deleted outright, superseded by the drivers table.
 
-**Race-detail panels (~13)**
+**Race-detail panels**
 `race-header.tsx`, `session-schedule-panel.tsx`, `session-pace-table.tsx`, `race-comparison.tsx`,
-`fastest-lap-banner.tsx`, `pace-projection-panel.tsx`, `car-performance-panel.tsx`, `ratings-panel.tsx`,
-`prediction-panel.tsx`, `xgboost-prediction-panel.tsx`, `track-map.tsx`, `telemetry-charts.tsx`,
-`team-selector.tsx`, `prediction-review-table.tsx`.
+`fastest-lap-banner.tsx`, `pace-projection-panel.tsx`, `car-performance-panel.tsx`, `prediction-panel.tsx`,
+`xgboost-prediction-panel.tsx`, `prediction-tabs.tsx` *(new — wraps the two prediction panels in a tabbed UI)*,
+`track-map.tsx`, `telemetry-charts.tsx`, `team-selector.tsx`, `prediction-review-table.tsx`.
 
-**Driver/team/standings panels (~3)**
-`driver-profile-panel.tsx`, `standings-tables.tsx` (+ `team-badge.tsx` reused here).
+**Driver/team/standings panels**
+`driver-profile-panel.tsx`, `standings-tables.tsx`, `ratings-panel.tsx` (moved to `/model`, no longer on the race
+page directly — reachable via a "Model Ratings →" link).
 
-Roughly **20 of 30** components are single-purpose "panel" components (one per data section, built on `HudPanel`);
-roughly 6-8 are true shared primitives. There is **no generic `Button`, `Badge`, `Card`, `Table`, or `Input`
-primitive** — each panel builds its own table/button markup inline with Tailwind, which has produced some literal
-duplication (see §6).
+There is still no generic `Button`/`Card`/`Table` primitive — each panel builds its own markup inline — but the two
+most-duplicated patterns identified in the first pass (season pickers, back-links) are now factored out.
 
 ---
 
 ## 4. Theming & branding
 
-**Stack**: Tailwind v4 (`@import "tailwindcss"` in `globals.css`; no `tailwind.config.js` — config lives in CSS).
-Fonts via `next/font/google`: `Geist` (sans, body/headings) and `Geist_Mono` (exposed as the `.hud-mono` utility
-class, used pervasively for labels, timestamps, buttons, section markers).
-
-**Design language — deliberate sci-fi HUD / mission-control dashboard aesthetic.** `HudPanel`'s own doc comment:
-*"Shared HUD-style panel: angular corner brackets, glowing cyan border, dark translucent background... so the
-sci-fi dashboard aesthetic stays consistent."* Concrete manifestations:
-- `HudPanel` draws four absolutely-positioned corner-bracket spans (targeting-reticle corners) plus a soft cyan
-  `box-shadow` glow. It wraps nearly every card/table/panel in the app — it is the single dominant visual motif.
-- Section headers use a `//` prefix convention (`{"//"} This weekend`, `{"//"} Ratings`) mimicking a code comment.
-- Uppercase, letter-spaced, monospace micro-labels everywhere ("SYSTEM ONLINE", "IMPORT LOCKED").
-- Custom animations reinforcing a "live system" feel: `.hud-scan` (traveling highlight sweep), `.hud-pulse`
-  (brightness flicker), `.hud-ellipsis` (animated "..."), `.hud-bar-fill` (bars growing from 0 width). All four
-  respect `prefers-reduced-motion: reduce`.
-- Status bands (freshness banner) use colored glowing borders (red/amber/cyan) styled like alert klaxons rather
-  than typical toast notifications.
-
-**Palette** (CSS variables in `:root`):
-- Background `#05070a` (near-black), panel surface `#0b1015`, border `#164e5c` (dark cyan).
-- Accent `#22d3ee` (cyan-400-ish) / dim accent `#0e7490`.
-- Text `#e2e8f0` (slate-200) / dim text `#64748b` (slate-500).
-- Body background adds two faint radial cyan gradients (opacity 0.05-0.07) for a subtle glow vignette.
-- Status colors (amber for "new data," red for "locked"/DNF, green for points-scoring positions, yellow for P1) are
-  applied ad hoc via plain Tailwind utility classes per component, **not** defined as reusable theme tokens.
-- Per-team colors live separately in `src/lib/team-colors.ts` (`TEAM_COLORS: Record<string, string>`, one hex per
-  constructor, e.g. Red Bull `#3671C6`, Ferrari `#E8002D`), applied via inline `style={{ color: accent }}` since
-  arbitrary hexes can't be static Tailwind classes. This is the only per-brand color system in the app.
-
-**Dark/light mode**: dark-only by design. `color-scheme: dark` is hardcoded on `:root` and `html`; there is no
-light-mode media query, no `dark:` variants anywhere, and no theme toggle. This is a deliberate constraint of the
-HUD concept, not an oversight — worth stating explicitly so a reviewer doesn't flag "add light mode" as a
-freebie without registering that it cuts against the aesthetic.
+Unchanged from the first pass except one fix: **all secondary/dim text moved from `text-slate-500` (`#64748b`,
+~4:1 contrast on the panel background) to `text-slate-400` (`#94a3b8`, meets the 4.5:1 guideline)**, applied
+across all 32 files that used it. Everything else — the HUD/mission-control aesthetic, `HudPanel`'s corner
+brackets, the `//` section-header convention, the monospace micro-labels, the dark-only palette, per-team colors
+via `getTeamColor()` — is as documented in the first pass and hasn't changed.
 
 ---
 
 ## 5. Page layout order (top to bottom, as written in JSX)
 
-**Home (`/`)**
-1. "System Online" label
-2. `<h1>` "F1 Race Predictor"
-3. `FreshnessBanner`
-4. Stat tile grid: Season / Races Completed / Current Round (links to current race) / Next Race
-5. Two-column grid: `TopDriversPanel` + `TopBasePacePanel`
-6. `RaceList` (season calendar)
-7. `TitleOddsPanel` (championship odds + race-by-race predictions)
+**Home (`/`)** — reordered to lead with what a returning visitor wants first:
+1. "System Online" label, `<h1>`
+2. `NextRaceCard` — the next/current race, its top-3 win chances (from a stored prediction if one exists), a link
+   to the full race page
+3. `TitleOddsPanel` (championship odds, expected wins, race-by-race predictions)
+4. `RaceList` (season calendar)
+5. Stat tile row: Season / Races Completed
+6. `TopDriversPanel` (top 5) + a "View all drivers →" link to `/drivers`
 
-**Race detail (`/race/[season]/[round]`)**
-1. Header row: `RaceHeader` (prev/next arrows, round/circuit/date) + two buttons linking to the two subpages
-   ("Prediction Review →", "Telemetry Analysis →")
-2. `SessionSchedulePanel`
-3. "// This weekend" — grid of `SessionPaceTable`s (one per session type) or an empty state
-4. `CarPerformancePanel`
-5. `FastestLapBanner`
-6. *(conditional on practice data existing)* two-column grid: `PaceProjectionPanel` × 2 (qualifying pace / race
-   pace projections)
-7. `PredictionPanel` (Monte Carlo) — shown unconditionally, even for already-run races, deliberately (see its code
-   comment: this is how the model gets validated against known results)
-8. `XgboostPredictionPanel` — a second, independent model's panel, stacked directly below #7
-9. *(conditional)* "// Ratings" → `RatingsPanel`
-10. *(conditional)* `RaceComparison` (year-over-year)
+**Race detail (`/race/[season]/[round]`)** — reordered so the prediction leads, not buried at position 7:
+1. Header row: `RaceHeader` (prev/next arrows) + three buttons (Prediction Review, Telemetry Analysis, Model
+   Ratings)
+2. `PredictionTabs` — Monte Carlo ("Main Model") and XGBoost ("Experimental") as tabs, not stacked panels
+3. `SessionSchedulePanel`
+4. "// This weekend" — session pace tables
+5. `CarPerformancePanel`
+6. `FastestLapBanner`
+7. *(conditional)* practice-pace projection panels
+8. *(conditional)* `RaceComparison` (year-over-year)
 
-**Standings (`/standings`)**
-1. "Championship" label
-2. `<h1>` "{season} Standings" + inline season-picker pills
-3. Either an empty state or `StandingsTables` (drivers + teams)
-4. Small footnote disclaimer (fastest-lap point not included)
+`RatingsPanel` no longer appears here — moved to `/model`.
 
----
+**`/model`** *(new)*: `FreshnessBanner` (+ its `ImportButton`), then `RatingsPanel` for a chosen race (defaults to
+current/next, or `?race=season-round`).
 
-## 6. Known inconsistencies / rough edges
+**`/races`** *(new)*: title + `SeasonPicker`, then `RaceList` — the same calendar component the home page uses.
 
-These are observations, not yet-decided fixes — several may be intentional tradeoffs worth defending rather than
-changing.
-
-- **Nav omits the app's most-detailed page type.** There is no nav entry and no index page for races/schedule at
-  all — getting to any race page requires going through the home page first.
-- **No mobile nav.** The header has zero responsive handling at any breakpoint.
-- **No active-route highlighting** in the nav bar.
-- **No `loading.tsx`/`error.tsx` anywhere**, despite every page being an async server component doing multiple DB
-  queries (and the analysis subpage explicitly fetching live from an external API "which takes seconds," per its
-  own comment). Failures fall through to Next's default error page; there's no skeleton/spinner during
-  server-side data fetches (only `FreshnessBanner`'s and `ImportButton`'s own client-side loading states, which are
-  local to those components, not page-level). `notFound()` is used correctly and consistently, though.
-- **Duplicated "back link" styling**, copy-pasted verbatim across four pages (`driver/[driverId]`,
-  `team/[teamId]`, `race/.../analysis`, `race/.../prediction-review`) rather than factored into one component.
-- **Two prediction panels stacked with no distinguishing framing.** `PredictionPanel` (Monte Carlo, production) and
-  `XgboostPredictionPanel` (experimental second model) sit directly on top of each other under generic
-  `<section className="mt-8">` wrappers, each with only its own internal title. A first-time visitor has no
-  structural cue for "these are two different models, one is the real one" beyond reading both panels closely.
-- **Inconsistent season-picker idiom.** The standings page exposes season choice as clickable pill links; the
-  driver/team pages accept the same `?season=`-style parameter but expose no visible picker UI for it at all
-  (you'd need to already know the query param); the race analysis subpage solves a conceptually similar
-  "which team am I viewing" problem with its own independent `TeamSelector` component. Three different UI
-  solutions to closely related "pick a scope" problems.
-- **Data-access pattern is inconsistent.** Most pages fetch through a `@/queries/*` module
-  (`getStandings`, `getRaceByRoute`, etc.); `drivers/page.tsx` and the two race subpages instead run raw Drizzle
-  queries inline in the route file. Not a UX issue on its own, but it correlates with logic duplication (e.g.
-  driver sorting is embedded directly in `drivers/page.tsx` rather than in a query function).
-- **Team badges are intentionally not real logos** (`team-badge.tsx`'s own comment: original geometric marks, not
-  trademarked logos) — a legal/design constraint, not a bug, but worth flagging so a reviewer doesn't mistake it
-  for one.
+**Standings / Team** — both now use the shared `SeasonPicker`; the team page gained one where it previously had
+none (a `?season=` param existed but no visible control for it).
 
 ---
 
-## 7. Questions for the reviewer
+## 6. What changed since the first pass (mapped to reviewer feedback)
 
-Concrete things worth an opinion on, given the above:
+**High priority — all addressed:**
+1. Prediction moved from position 7 to position 2 on the race page.
+2. Home page reordered to lead with the next race.
+3. `/races` page added, linked from the nav.
+4. `error.tsx` (root) and `loading.tsx` (race + analysis routes) added.
 
-1. Should there be a races/schedule index page, and should the nav bar link to it?
-2. Is the "3 links, no mobile treatment, no active state" nav sufficient for the app's actual depth (8 route
-   patterns, several with sub-pages), or does it need restructuring (e.g. a schedule dropdown, breadcrumbs)?
-3. Is stacking the Monte Carlo and XGBoost prediction panels back-to-back the right call, or should they be
-   tabbed/toggled, or should XGBoost be demoted to a collapsed/opt-in section given it's explicitly experimental?
-4. Is the home page's section order (stat tiles → top drivers/pace → race calendar → title odds) the right
-   priority order for a first-time visitor versus a returning one checking on the current race?
-5. Should the season-picker pattern be unified into one shared component across standings/driver/team pages?
-6. Any opinion on the HUD aesthetic itself (corner brackets, monospace everywhere, `//` section markers) as a
-   sustained design language for a 9-page app — does it hold up, or does it start fighting readability on
-   data-dense pages (e.g. the full-field prediction tables)?
+**Medium priority — all addressed:**
+5. Developer/model tooling (freshness, imports, ratings) split onto `/model`, off the fan-facing pages.
+6. Monte Carlo vs. XGBoost are now tabs, Monte Carlo default, labelled Main Model / Experimental.
+7. Nav has active-link highlighting; four copy-pasted back-links replaced with one `Breadcrumbs` component.
+8. Text contrast fixed (`slate-500` → `slate-400`, 32 files).
+9. One shared `SeasonPicker` component, used on standings/races/team pages.
+
+**Additional fixes made along the way, not in the original feedback:**
+- The drivers page was rebuilt from a card grid into a sortable-by-points table with the model's actual ratings
+  (base pace, DNF rate) per driver, since a user asked to see that data in one place. Two columns considered for
+  it — practice pace and track affinity — were deliberately *not* included: both are computed relative to one
+  specific race (practice pace to that weekend's sessions, track affinity to that race's circuit type), so neither
+  has a single meaningful season-level value: showing "the value from whichever race happened to be stored last"
+  would silently mislabel a per-race number as a season stat. They remain visible per-race on the driver/race
+  pages instead, where "which race" is unambiguous.
+- Base pace on the drivers table is colored green (negative — faster than the field) vs. red (positive), so the
+  faster/slower split is readable at a glance rather than requiring the reader to parse the sign.
+- DNF rate is recency-weighted (5-race half-life), not a plain DNFs/races count, which can make two drivers with
+  an identical DNF *count* show different percentages depending on how recently each one happened — flagged
+  explicitly in a footnote and column tooltip after it read as an inconsistency without that context.
+
+---
+
+## 7. Still open / not addressed
+
+- **No mobile nav** — accepted as fine for the current link count (four links + one button), revisit if the nav
+  grows further.
+- **No generic UI primitives** (`Button`, `Card`, `Table`) — panels still each build their own markup. Lower
+  priority than the season-picker/breadcrumb duplication that was fixed, since it's more pervasive and would be a
+  larger refactor for less immediate benefit.
+- **No backtest/calibration UI** — `/model` currently shows live ratings only; backtest results and calibration
+  buckets (mentioned as a possible `/model` addition) still only exist as CLI script output
+  (`npm run backtest`, `npm run calibrate`). Deliberately out of scope for this pass — a UI for that would be new
+  work, not a relocation of existing UI.
+- **Data-access pattern is still inconsistent** — most pages fetch through `@/queries/*`; `drivers/page.tsx` and
+  the race subpages still run raw Drizzle queries inline. Not touched in this pass.

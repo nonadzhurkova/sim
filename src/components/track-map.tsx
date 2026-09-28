@@ -81,7 +81,7 @@ export function TrackMap({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+        <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
           Track map · {view === "delta" ? "where time is won and lost" : "speed"}
         </p>
         <div className="flex gap-2">
@@ -92,7 +92,7 @@ export function TrackMap({
               className={`hud-mono border px-2 py-0.5 text-[9px] uppercase tracking-wider transition-colors ${
                 view === m
                   ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
-                  : "border-slate-800 text-slate-500 hover:border-slate-700"
+                  : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
               {m}

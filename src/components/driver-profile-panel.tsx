@@ -7,7 +7,7 @@ import { getTeamColor } from "@/lib/team-colors";
 /** Colour a finishing position the way a results screen would. */
 function positionClass(position: number | null, status: string | null): string {
   if (status && status !== "finished") return "text-red-400";
-  if (position == null) return "text-slate-500";
+  if (position == null) return "text-slate-400";
   if (position === 1) return "text-yellow-300";
   if (position <= 3) return "text-slate-100";
   if (position <= 10) return "text-green-400";
@@ -16,13 +16,13 @@ function positionClass(position: number | null, status: string | null): string {
 
 function ResultsTable({ rows, showSeason }: { rows: DriverRaceRow[]; showSeason?: boolean }) {
   if (rows.length === 0) {
-    return <p className="hud-mono text-xs text-slate-500">NO RESULTS</p>;
+    return <p className="hud-mono text-xs text-slate-400">NO RESULTS</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[560px] text-xs">
         <thead>
-          <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+          <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
             <th className="py-1.5 pr-3 font-medium">{showSeason ? "Race" : "Round"}</th>
             <th className="py-1.5 pr-3 font-medium">Circuit</th>
             <th className="py-1.5 pr-3 font-medium">Team</th>
@@ -47,13 +47,13 @@ function ResultsTable({ rows, showSeason }: { rows: DriverRaceRow[]; showSeason?
               <td className="py-1.5 pr-3">
                 <span className="flex items-center gap-1.5">
                   <TeamBadge teamName={r.teamName} size={12} />
-                  <span className="hud-mono text-[10px] text-slate-500">{r.teamName}</span>
+                  <span className="hud-mono text-[10px] text-slate-400">{r.teamName}</span>
                 </span>
               </td>
               <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                 {r.qualifyingPosition ?? "—"}
               </td>
-              <td className="hud-mono py-1.5 pr-3 text-right text-slate-500">
+              <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                 {r.gridPosition ?? "—"}
               </td>
               <td
@@ -74,7 +74,7 @@ function ResultsTable({ rows, showSeason }: { rows: DriverRaceRow[]; showSeason?
                 ) : r.placesGained < 0 ? (
                   <span className="text-red-400">▼{Math.abs(r.placesGained)}</span>
                 ) : (
-                  <span className="text-slate-500">–</span>
+                  <span className="text-slate-400">–</span>
                 )}
               </td>
             </tr>
@@ -157,7 +157,7 @@ export function DriverProfilePanel({
               <span className="text-sm text-slate-300">{profile.currentTeam ?? "—"}</span>
             </span>
             {profile.nationality && (
-              <span className="hud-mono text-[11px] text-slate-500">{profile.nationality}</span>
+              <span className="hud-mono text-[11px] text-slate-400">{profile.nationality}</span>
             )}
           </div>
         </div>
@@ -189,7 +189,7 @@ export function DriverProfilePanel({
             />
           </div>
           {current.qualiBattles > 0 && (
-            <p className="hud-mono mt-2 text-[11px] text-slate-500">
+            <p className="hud-mono mt-2 text-[11px] text-slate-400">
               TEAM-MATE QUALIFYING:{" "}
               <span
                 className={
@@ -214,7 +214,7 @@ export function DriverProfilePanel({
           {circuitHistory.length > 0 ? (
             <ResultsTable rows={circuitHistory} showSeason />
           ) : (
-            <p className="hud-mono text-xs text-slate-500">
+            <p className="hud-mono text-xs text-slate-400">
               NO PREVIOUS RACES AT THIS CIRCUIT IN THE INGESTED DATA.
             </p>
           )}
@@ -232,7 +232,7 @@ export function DriverProfilePanel({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-xs">
               <thead>
-                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                   <th className="py-1.5 pr-3 font-medium">Season</th>
                   <th className="py-1.5 pr-3 font-medium text-right">Races</th>
                   <th className="py-1.5 pr-3 font-medium text-right">Wins</th>

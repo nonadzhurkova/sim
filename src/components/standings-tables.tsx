@@ -150,14 +150,14 @@ export function StandingsTables({
               className={`hud-mono border px-3 py-1.5 text-[11px] uppercase tracking-widest transition-colors ${
                 tab === t
                   ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
-                  : "border-slate-800 text-slate-500 hover:border-slate-700"
+                  : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
               {t === "drivers" ? "Drivers" : "Constructors"}
             </button>
           ))}
         </div>
-        <p className="hud-mono text-[10px] uppercase tracking-wider text-slate-500">
+        <p className="hud-mono text-[10px] uppercase tracking-wider text-slate-400">
           After round {roundsScored}
         </p>
       </div>
@@ -166,7 +166,7 @@ export function StandingsTables({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-sm">
             <thead>
-              <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+              <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                 <th className="py-2 pr-2 font-medium">Pos</th>
                 <th className="py-2 pr-2 font-medium" />
                 <th className="py-2 pr-3 font-medium">
@@ -230,10 +230,10 @@ export function StandingsTables({
                       {isDriver ? (
                         <span className="flex items-center gap-1.5">
                           <TeamBadge teamName={teamName} size={12} />
-                          <span className="hud-mono text-[10px] text-slate-500">{teamName}</span>
+                          <span className="hud-mono text-[10px] text-slate-400">{teamName}</span>
                         </span>
                       ) : (
-                        <span className="hud-mono text-[10px] text-slate-500">
+                        <span className="hud-mono text-[10px] text-slate-400">
                           {(row as TeamStanding).driverNames
                             .map((n) => n.split(/\s+/).pop())
                             .join(", ")}

@@ -61,7 +61,7 @@ export function FreshnessBanner({ season }: { season: number }) {
   if (!freshness) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 border border-cyan-900/40 bg-[#0b1015]/60 px-4 py-2">
-        <p className="hud-mono text-[11px] text-slate-500">
+        <p className="hud-mono text-[11px] text-slate-400">
           <span className="mr-2 uppercase tracking-widest text-cyan-600">⬤ Checking...</span>
           Checking for new data
         </p>
@@ -94,7 +94,7 @@ export function FreshnessBanner({ season }: { season: number }) {
             {refreshButton}
           </div>
         </div>
-        <p className="hud-mono mt-1 text-[11px] text-slate-500">
+        <p className="hud-mono mt-1 text-[11px] text-slate-400">
           Come back after the session ends, then import to pick up everything at once.
         </p>
       </div>
@@ -105,7 +105,7 @@ export function FreshnessBanner({ season }: { season: number }) {
     return (
       <div className="flex items-center justify-between gap-4 border border-slate-600/50 bg-slate-900/40 px-4 py-3">
         <p className="hud-mono text-xs text-slate-400">
-          <span className="mr-2 uppercase tracking-widest text-slate-500">⬤ OpenF1 Unreachable</span>
+          <span className="mr-2 uppercase tracking-widest text-slate-400">⬤ OpenF1 Unreachable</span>
           Couldn&apos;t reach the timing API — race results can still be imported.
         </p>
         <div className="flex items-center gap-3">
@@ -133,7 +133,7 @@ export function FreshnessBanner({ season }: { season: number }) {
           </div>
         </div>
         {freshness.nextSession && (
-          <p className="hud-mono mt-1 text-[11px] text-slate-500">
+          <p className="hud-mono mt-1 text-[11px] text-slate-400">
             Import now — {freshness.nextSession.name}
             {freshness.nextSession.location ? ` at ${freshness.nextSession.location}` : ""} starts{" "}
             <RelativeTime iso={freshness.nextSession.startsAt} />, which locks the API again.
@@ -147,7 +147,7 @@ export function FreshnessBanner({ season }: { season: number }) {
   // is distinguishable from the API being blocked.
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border border-cyan-900/40 bg-[#0b1015]/60 px-4 py-2">
-      <p className="hud-mono text-[11px] text-slate-500">
+      <p className="hud-mono text-[11px] text-slate-400">
         <span className="mr-2 uppercase tracking-widest text-cyan-600">⬤ API Available</span>
         Data is up to date
         {freshness.nextSession && (

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getRaceByRoute } from "@/queries/races";
 import { buildPredictionReview } from "@/queries/prediction-review";
 import { PredictionReviewTable } from "@/components/prediction-review-table";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 /**
  * How the model's prediction for one already-run race compares to what
@@ -27,7 +28,14 @@ export default async function PredictionReviewPage({
 
   return (
     <main className="mx-auto max-w-[1200px] px-6 py-8 lg:px-10">
-      <div className="flex items-center justify-between gap-4">
+      <Breadcrumbs
+        items={[
+          { label: "Races", href: "/races" },
+          { label: race.circuitName, href: `/race/${season}/${round}` },
+          { label: "Prediction Review" },
+        ]}
+      />
+      <div className="mt-2 flex items-center justify-between gap-4">
         <div>
           <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
             {season} {"//"} Round {String(round).padStart(2, "0")}
@@ -43,7 +51,7 @@ export default async function PredictionReviewPage({
       </div>
 
       {!review ? (
-        <p className="hud-mono mt-6 text-xs text-slate-500">
+        <p className="hud-mono mt-6 text-xs text-slate-400">
           NO RESULT YET FOR THIS RACE — NOTHING TO REVIEW UNTIL IT HAS BEEN RUN AND IMPORTED.
         </p>
       ) : (

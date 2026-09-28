@@ -151,7 +151,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
     <HudPanel title="Race Prediction — Monte Carlo">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+          <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
             Iterations
           </span>
           {ITERATION_OPTIONS.map((n) => (
@@ -162,7 +162,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
               className={`hud-mono border px-2 py-1 text-[10px] tracking-wider transition-colors disabled:opacity-50 ${
                 iterations === n
                   ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
-                  : "border-slate-800 text-slate-500 hover:border-slate-700"
+                  : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
               {thousands(n)}
@@ -179,7 +179,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
       </div>
 
       {state === "idle" && (
-        <p className="hud-mono mt-3 text-[11px] leading-relaxed text-slate-500">
+        <p className="hud-mono mt-3 text-[11px] leading-relaxed text-slate-400">
           RUNS A MONTE CARLO SIMULATION OF THIS RACE FROM THE RATINGS COMPUTED
           BEFORE IT — BASE PACE, PRACTICE PACE, LONG-RUN PACE, CAR STRENGTH,
           TRACK AFFINITY AND RELIABILITY — SAMPLING PACE NOISE, RETIREMENTS AND
@@ -221,7 +221,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
       {(isLive || (state === "done" && result)) && (
         <>
           {result && state === "done" ? (
-            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-500">
+            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-400">
               {thousands(result.iterations)} iterations ·{" "}
               {!result.hasRealGrid ? (
                 <span className="text-amber-400">grid simulated (no qualifying yet)</span>
@@ -242,7 +242,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[620px] text-xs">
               <thead>
-                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                   <th className="py-1.5 pr-2 font-medium">#</th>
                   <th className="py-1.5 pr-3 font-medium">Driver</th>
                   <th className="py-1.5 pr-3 font-medium">Win</th>
@@ -300,13 +300,13 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
                       <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                         {pct(d.pointsPct)}%
                       </td>
-                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-500">
+                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                         {pct(d.dnfPct)}%
                       </td>
                       <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                         {d.avgFinishPosition != null ? d.avgFinishPosition.toFixed(1) : "—"}
                       </td>
-                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-500">
+                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                         {d.expectedPace >= 0 ? "+" : ""}
                         {d.expectedPace.toFixed(3)}
                       </td>

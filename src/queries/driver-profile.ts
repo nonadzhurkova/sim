@@ -18,6 +18,56 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
  * loads, so there's nothing to gain from fetching it each time.
  */
 
+export type DriverLatestRating = {
+  driverId: number;
+  basePace: number | null;
+  driverReliability: number | null;
+  asOfRound: number;
+};
+
+/**
+ * Every driver's most recent stored basePace/driverReliability within
+ * `season`, in one query -- used by the drivers index page so it doesn't run
+ * getDriverProfile's per-driver rating lookup once per row (an N+1 query
+ * pattern). Deliberately excludes practicePace and trackAffinity: both are
+ * computed per race (practicePace from that one weekend's sessions,
+ * trackAffinity relative to that specific race's circuit type), so neither
+ * has a single season-level value that would mean anything on a season
+ * index -- they're shown per-race on the individual driver/race pages
+ * instead, where "which race" is unambiguous.
+ *
+ * driver_ratings has one row per (driver, race); "most recent" per driver is
+ * the max-round row, found here by ordering all of a season's rows by round
+ * descending and keeping the first one seen per driver, rather than a SQL
+ * window function -- simpler to read and cheap at a season's row count
+ * (drivers x races, a few hundred rows at most).
+ */
+export async function getLatestDriverRatingsForSeason(season: number): Promise<Map<number, DriverLatestRating>> {
+  const rows = await db
+    .select({
+      driverId: driverRatings.driverId,
+      basePace: driverRatings.basePace,
+      driverReliability: driverRatings.driverReliability,
+      round: races.round,
+    })
+    .from(driverRatings)
+    .innerJoin(races, eq(driverRatings.raceId, races.id))
+    .where(eq(races.season, season))
+    .orderBy(desc(races.round));
+
+  const byDriver = new Map<number, DriverLatestRating>();
+  for (const r of rows) {
+    if (byDriver.has(r.driverId)) continue;
+    byDriver.set(r.driverId, {
+      driverId: r.driverId,
+      basePace: r.basePace,
+      driverReliability: r.driverReliability,
+      asOfRound: r.round,
+    });
+  }
+  return byDriver;
+}
+
 export type DriverRaceRow = {
   raceId: number;
   season: number;

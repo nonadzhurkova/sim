@@ -61,8 +61,8 @@ function RaceCard({
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-500">{race.country ?? ""}</span>
-        <span className="hud-mono text-[11px] text-slate-500">{race.date}</span>
+        <span className="text-xs text-slate-400">{race.country ?? ""}</span>
+        <span className="hud-mono text-[11px] text-slate-400">{race.date}</span>
       </div>
     </Link>
   );
@@ -91,7 +91,7 @@ export function RaceList({
 
       {past.length > 0 && (
         <details className={upcoming.length > 0 ? "mt-5 border-t border-slate-800/60 pt-4" : ""}>
-          <summary className="hud-mono cursor-pointer text-[11px] uppercase tracking-widest text-slate-500 hover:text-slate-400">
+          <summary className="hud-mono cursor-pointer text-[11px] uppercase tracking-widest text-slate-400 hover:text-slate-400">
             Past races ({past.length})
           </summary>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

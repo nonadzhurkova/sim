@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { teams, drivers, races, circuits, raceResults, teamRatings } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { getLatestSeason } from "@/queries/races";
+import { getLatestSeason, getAllSeasons, resolveSeasonParam } from "@/queries/races";
 import { getStandings, pointsForPosition } from "@/queries/standings";
 import { HudPanel } from "@/components/hud-panel";
 import { TeamBadge } from "@/components/team-badge";
+import { SeasonPicker } from "@/components/season-picker";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { getTeamColor } from "@/lib/team-colors";
 
 /** Constructor page: season form, both drivers, and recent results. */
@@ -22,9 +24,8 @@ export default async function TeamPage({
   const teamId = parseInt(teamIdStr, 10);
   if (!Number.isInteger(teamId)) notFound();
 
-  const latest = await getLatestSeason();
-  const requested = seasonParam ? parseInt(seasonParam, 10) : NaN;
-  const season = Number.isInteger(requested) ? requested : latest;
+  const [latest, seasons] = await Promise.all([getLatestSeason(), getAllSeasons()]);
+  const season = resolveSeasonParam(seasonParam, seasons, latest);
 
   const [team] = await db
     .select({ id: teams.id, name: teams.name, engineSupplier: teams.engineSupplier })
@@ -93,12 +94,10 @@ export default async function TeamPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <Link
-        href="/standings"
-        className="hud-mono text-xs uppercase tracking-widest text-cyan-500 hover:text-cyan-300"
-      >
-        ← Standings
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Breadcrumbs items={[{ label: "Standings", href: "/standings" }, { label: team.name }]} />
+        <SeasonPicker basePath={`/team/${teamId}`} seasons={seasons} activeSeason={season} />
+      </div>
 
       <div
         className="mt-4 flex flex-wrap items-center gap-4 border border-slate-800 bg-slate-900/40 p-5"
@@ -107,7 +106,7 @@ export default async function TeamPage({
         <TeamBadge teamName={team.name} size={40} />
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-slate-100">{team.name}</h1>
-          <p className="hud-mono mt-0.5 text-[11px] text-slate-500">
+          <p className="hud-mono mt-0.5 text-[11px] text-slate-400">
             {season}
             {team.engineSupplier ? ` · ${team.engineSupplier} power` : ""}
             {standing ? ` · P${standing.position} in the championship` : ""}
@@ -162,7 +161,7 @@ export default async function TeamPage({
               ) : null}
               <div className="min-w-0 flex-1">
                 <div className="truncate font-semibold text-slate-100">{d.name}</div>
-                <div className="hud-mono text-[10px] text-slate-500">
+                <div className="hud-mono text-[10px] text-slate-400">
                   {d.races} races · best P{d.bestFinish ?? "—"}
                 </div>
               </div>
@@ -177,7 +176,7 @@ export default async function TeamPage({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-xs">
               <thead>
-                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                   <th className="py-1.5 pr-3 font-medium">Round</th>
                   <th className="py-1.5 pr-3 font-medium">Circuit</th>
                   <th className="py-1.5 pr-3 font-medium">Driver</th>
@@ -198,7 +197,7 @@ export default async function TeamPage({
                     <td className="py-1.5 pr-3 text-slate-200">
                       {r.driverName.split(/\s+/).pop()}
                     </td>
-                    <td className="hud-mono py-1.5 pr-3 text-right text-slate-500">
+                    <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">
                       {r.gridPosition ?? "—"}
                     </td>
                     <td

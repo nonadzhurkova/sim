@@ -28,14 +28,17 @@ ingest → ratings → sim → (calibrate / backtest)
   (`engine.ts`), calibrating win probabilities (`calibration.ts`), and
   backtesting predictions against real results (`backtest.ts`).
   `npm run simulate`, `npm run backtest`, `npm run calibrate`.
-- **`src/app/`** — the Next.js UI: home page (freshness/import status,
-  championship odds, top-5 driver standings and base-pace panels, season
-  calendar with sprint-weekend badges), driver/team pages, standings, and a
-  per-race page with a live simulation view, a weekend session schedule
-  (live from OpenF1, not the DB — see `session-schedule/route.ts`), a
-  telemetry analysis subpage, and a prediction-review subpage that re-runs
-  the model against an already-decided race and shows exactly what it got
-  right and wrong, driver by driver.
+- **`src/app/`** — the Next.js UI: a home page leading with the next race's
+  top-3 win chances, championship odds, and a season calendar with
+  sprint-weekend badges; a `/races` schedule page; a drivers table (points,
+  base pace, DNF rate); driver/team pages; standings; a per-race page led by
+  a tabbed Monte Carlo/XGBoost prediction, then a weekend session schedule
+  (live from OpenF1, not the DB — see `session-schedule/route.ts`); a
+  telemetry analysis subpage; a prediction-review subpage that compares both
+  models against an already-decided race, driver by driver, sorted by actual
+  finishing order; and a `/model` page for the data-import/freshness status
+  and the model's own driver/team ratings — see `DESIGN.md` for the full
+  page-by-page breakdown and the reasoning behind this layout.
 
 ## How the simulation works
 
@@ -167,6 +170,18 @@ panel's smaller per-race budget, verified directly: a single-race run at
 matching (2,000) iterations reproduces the same order flip on a different
 seed, for the same race, with no code difference at all.
 
+### Frozen prediction log
+
+Every simulation run (Monte Carlo, via `runAndStoreSimulation`/`streamSimulation` in `run-simulation.ts`) and every
+XGBoost call (`/api/xgboost-predict`) is stamped with `predictedBeforeRace` (was the race's date still in the
+future at the moment this run was created?) and `modelVersion` (`MODEL_VERSION` in `params.ts`, hand-bumped
+whenever a change would alter what a run outputs for the same race). This exists so "what did the model predict
+for this race" has an honest answer: `getFrozenPrediction`/`getFrozenXgboostPrediction` return the *most recent
+run made before the race happened*, not the most recent run overall — re-running a simulation before the race is
+still refining a genuine prediction, but a run made after the result is known would misrepresent history if shown
+as a prior forecast. The prediction-review page prefers this frozen record and only falls back to a live replay
+(clearly labelled as reconstructed) when no pre-race run exists for that race yet.
+
 ### Variables at a glance
 
 **Pace composition weights** (`PACE_WEIGHTS`, `src/sim/params.ts`) — combined
@@ -198,7 +213,7 @@ to calibrate:
 | `SAFETY_CAR_COMPRESSION` | 0.65 | fraction of pace spread retained under a safety car |
 | `SAFETY_CAR_SHUFFLE_FACTOR` | 0.3 | extra noise multiplier during a safety car — this, not compression, is what actually reorders finishers |
 | `PACE_UNCERTAINTY_WEIGHT` | 0 (disabled) | how much a driver's own rating uncertainty widens their pace noise — tested, rejected |
-| `WIN_PROBABILITY_CALIBRATION` | `{ a: 0.6698, b: -0.3283 }` | Platt-scaling params: `calibrated = sigmoid(a * logit(raw) + b)` |
+| `WIN_PROBABILITY_CALIBRATION` | `{ a: 0.7697, b: -0.2061 }` | Platt-scaling params: `calibrated = sigmoid(a * logit(raw) + b)` |
 | `DEFAULT_DNF_RATE` | 0.08 | fallback reliability for a driver with no history |
 | `MIN_DNF_RATE` / `MAX_DNF_RATE` | 0.01 / 0.35 | clamps so one bad recent run of luck can't make a driver a near-certain retirement |
 | `POINTS_BY_POSITION` | `[25,18,15,12,10,8,6,4,2,1]` | championship points for positions 1-10 |
@@ -400,7 +415,11 @@ npm run dev            # start the app
 npm run ingest          # pull latest race data
 npm run ratings         # recompute ratings from ingested data
 npm run backtest -- 2026 4000     # backtest a season at N iterations
-npm run calibrate -- 2024,2025,2026 2024   # fit Platt-scaling calibration
+npm run calibrate                 # fit Platt-scaling on 2025+2026, validate cold on 2024
+npm run db:generate                # generate a drizzle migration after a schema.ts change
+npm run db:migrate                 # apply pending migrations
 ```
 
-Requires a `.env.local` with a Neon Postgres connection string.
+Requires a `.env.local` with a Neon Postgres connection string. Don't fit-and-validate Platt calibration on
+overlapping seasons (e.g. `npm run calibrate -- 2024,2025,2026 2024`) — that isn't a real holdout; the no-arg
+default (train on 2025+2026, validate cold on 2024) is the honest version and what's actually shipped.

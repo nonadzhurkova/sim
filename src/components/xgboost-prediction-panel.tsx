@@ -80,7 +80,7 @@ export function XgboostPredictionPanel({ raceId }: { raceId: number }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[520px] text-xs">
               <thead>
-                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+                <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                   <th className="py-1.5 pr-2 font-medium">#</th>
                   <th className="py-1.5 pr-3 font-medium">Driver</th>
                   <th className="py-1.5 pr-3 font-medium">Win</th>
@@ -115,7 +115,7 @@ export function XgboostPredictionPanel({ raceId }: { raceId: number }) {
                           <span className="hud-mono w-10 text-right text-amber-300">{pct(d.winProbability)}%</span>
                         </div>
                       </td>
-                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-500">{pct(d.predDnfProb)}%</td>
+                      <td className="hud-mono py-1.5 pr-3 text-right text-slate-400">{pct(d.predDnfProb)}%</td>
                       <td className="hud-mono py-1.5 text-right text-slate-400">{d.predFinishPosition.toFixed(1)}</td>
                     </tr>
                   );

@@ -13,7 +13,7 @@ function AdjacentRaceLink({ race, direction }: { race: AdjacentRace | null; dire
     <Link
       href={`/race/${race.season}/${race.round}`}
       title={race.circuitName}
-      className={`hud-mono flex shrink-0 items-center gap-1 text-xs text-slate-500 transition-colors hover:text-cyan-300 ${
+      className={`hud-mono flex shrink-0 items-center gap-1 text-xs text-slate-400 transition-colors hover:text-cyan-300 ${
         direction === "previous" ? "flex-row" : "flex-row-reverse"
       }`}
     >
@@ -43,7 +43,7 @@ export function RaceHeader({
         {race.season} {"//"} Round {String(race.round).padStart(2, "0")}
       </p>
       <h1 className="mt-1 text-2xl font-bold text-slate-100">{race.circuitName}</h1>
-      <p className="hud-mono mt-1 text-xs text-slate-500">
+      <p className="hud-mono mt-1 text-xs text-slate-400">
         {race.country} • {race.date}
       </p>
     </div>

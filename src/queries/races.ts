@@ -18,6 +18,23 @@ export async function getLatestSeason(): Promise<number> {
   return row?.maxSeason ?? new Date().getFullYear();
 }
 
+/** Every season with at least one race, newest first — for season-picker UI (standings, team, races pages). */
+export async function getAllSeasons(): Promise<number[]> {
+  const rows = await db.selectDistinct({ season: races.season }).from(races).orderBy(desc(races.season));
+  return rows.map((r) => r.season);
+}
+
+/**
+ * Resolves a `?season=` query param against the seasons that actually have
+ * data, falling back to the latest season for anything invalid or absent —
+ * the same resolution logic the standings/team/races pages each ran
+ * independently before this was factored out.
+ */
+export function resolveSeasonParam(seasonParam: string | undefined, seasons: number[], latest: number): number {
+  const requested = seasonParam ? parseInt(seasonParam, 10) : NaN;
+  return seasons.includes(requested) ? requested : latest;
+}
+
 export type RaceListItem = RaceSummary & { circuitName: string; country: string | null };
 
 export async function listRacesForSeason(season: number): Promise<RaceListItem[]> {

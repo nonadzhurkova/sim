@@ -47,7 +47,7 @@ function OddsRow({
   href: string;
 }) {
   const color = getTeamColor(teamName);
-  const medal = ["text-yellow-300", "text-slate-300", "text-amber-600"][index] ?? "text-slate-500";
+  const medal = ["text-yellow-300", "text-slate-300", "text-amber-600"][index] ?? "text-slate-400";
   const gain = Math.round(projectedPoints - currentPoints);
 
   return (
@@ -88,7 +88,7 @@ function OddsRow({
             being the single-race favourite everywhere (which this panel's
             per-race summary can otherwise misread as "wins every race" when
             it's really "favoured, often under 50%, race after race"). */}
-        <p className="hud-mono mt-0.5 text-[10px] text-slate-500">
+        <p className="hud-mono mt-0.5 text-[10px] text-slate-400">
           <AnimatedNumber value={expectedWins} decimals={1} /> expected win{Math.abs(expectedWins - 1) < 0.05 ? "" : "s"} remaining
         </p>
       </div>
@@ -169,7 +169,7 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
                   const driverColor = getTeamColor(c.teamName);
                   return (
                     <li key={c.driverId} className="flex items-center gap-2">
-                      <span className="hud-mono w-5 shrink-0 text-xs text-slate-500">{i + 1}</span>
+                      <span className="hud-mono w-5 shrink-0 text-xs text-slate-400">{i + 1}</span>
                       <span className="h-3 w-[3px] shrink-0" style={{ backgroundColor: driverColor }} />
                       <span className="flex-1 truncate text-sm text-slate-300">{c.driverName}</span>
                       <span className="hud-mono shrink-0 text-sm text-cyan-300">{pct(c.winPct)}%</span>
@@ -177,7 +177,7 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
                   );
                 })}
               </ul>
-              <p className="hud-mono mt-3 border-t border-slate-800/60 pt-2 text-xs text-slate-500">
+              <p className="hud-mono mt-3 border-t border-slate-800/60 pt-2 text-xs text-slate-400">
                 top team:{" "}
                 <span className="font-semibold" style={{ color: teamColor }}>
                   {o.favouriteTeamName}
@@ -257,7 +257,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
     return (
       <HudPanel title={`${season} Championship Prediction`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="hud-mono max-w-2xl text-[11px] leading-relaxed text-slate-500">
+          <p className="hud-mono max-w-2xl text-[11px] leading-relaxed text-slate-400">
             SIMULATES EVERY REMAINING RACE OF THE SEASON AND ROLLS THE POINTS ONTO THE CURRENT
             STANDINGS, GIVING DRIVERS&apos; AND CONSTRUCTORS&apos; TITLE ODDS.
           </p>
@@ -282,7 +282,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
   if (projection.complete) {
     return (
       <HudPanel title={`${projection.season} Championship — final`}>
-        <p className="hud-mono text-xs text-slate-500">
+        <p className="hud-mono text-xs text-slate-400">
           SEASON COMPLETE ·{" "}
           <span className="text-yellow-300">{projection.drivers[0]?.name}</span> and{" "}
           <span className="text-yellow-300">{projection.teams[0]?.name}</span> took the titles.

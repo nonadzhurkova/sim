@@ -12,12 +12,12 @@ const SESSION_LABELS: Record<string, string> = {
 
 function WeatherRow({ snapshot }: { snapshot: RaceWeekendSnapshot }) {
   const entries = Object.entries(snapshot.weatherBySession);
-  if (entries.length === 0) return <p className="hud-mono text-xs text-slate-500">NO DATA</p>;
+  if (entries.length === 0) return <p className="hud-mono text-xs text-slate-400">NO DATA</p>;
   return (
     <ul className="hud-mono text-xs text-slate-400">
       {entries.map(([type, weather]) => (
         <li key={type} className="flex justify-between border-t border-slate-800/80 py-1 first:border-t-0">
-          <span className="text-slate-500">{SESSION_LABELS[type] ?? type}</span>
+          <span className="text-slate-400">{SESSION_LABELS[type] ?? type}</span>
           <span className={weather === "wet" ? "text-cyan-300" : "text-slate-300"}>
             {(weather ?? "unknown").toUpperCase()}
           </span>
@@ -55,7 +55,7 @@ export function RaceComparison({ comparison }: { comparison: YearOverYearCompari
         {comparison.lastYear ? (
           <SnapshotColumn snapshot={comparison.lastYear} label="Last Year" />
         ) : (
-          <p className="hud-mono text-xs text-slate-500">NO RACE AT THIS CIRCUIT LAST YEAR</p>
+          <p className="hud-mono text-xs text-slate-400">NO RACE AT THIS CIRCUIT LAST YEAR</p>
         )}
       </div>
     </details>

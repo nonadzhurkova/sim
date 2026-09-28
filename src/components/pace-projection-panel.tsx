@@ -56,15 +56,15 @@ function StintDetail({ raceId, driverId }: { raceId: number; driverId: number })
     };
   }, [raceId, driverId]);
 
-  if (state === "loading") return <p className="hud-mono py-2 text-[11px] text-slate-500">LOADING...</p>;
+  if (state === "loading") return <p className="hud-mono py-2 text-[11px] text-slate-400">LOADING...</p>;
   if (state === "error") return <p className="hud-mono py-2 text-[11px] text-red-400">FAILED TO LOAD</p>;
   if (stints.length === 0)
-    return <p className="hud-mono py-2 text-[11px] text-slate-500">NO STINT DATA</p>;
+    return <p className="hud-mono py-2 text-[11px] text-slate-400">NO STINT DATA</p>;
 
   return (
     <table className="w-full text-xs">
       <thead>
-        <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+        <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
           <th className="py-1 pr-3 font-medium">Session</th>
           <th className="py-1 pr-3 font-medium">Compound</th>
           <th className="py-1 pr-3 font-medium text-right">Laps</th>
@@ -164,7 +164,7 @@ export function PaceProjectionPanel({
     <HudPanel title={title}>
       <div className="flex items-center justify-between gap-3">
         {state === "loading" && rows.length === 0 ? (
-          <p className="hud-mono text-xs text-slate-500">CALCULATING...</p>
+          <p className="hud-mono text-xs text-slate-400">CALCULATING...</p>
         ) : (
           <span />
         )}
@@ -180,7 +180,7 @@ export function PaceProjectionPanel({
       {state === "error" && <p className="hud-mono mt-2 text-[11px] text-red-400">{error}</p>}
 
       {state === "done" && rows.length === 0 && (
-        <p className="hud-mono mt-2 text-xs text-slate-500">{emptyMessage}</p>
+        <p className="hud-mono mt-2 text-xs text-slate-400">{emptyMessage}</p>
       )}
 
       {state === "done" && rows.length > 0 && rows.length < LOW_FIELD_COVERAGE_THRESHOLD && (
@@ -208,7 +208,7 @@ export function PaceProjectionPanel({
                   <span className="hud-mono w-4 shrink-0 text-xs text-slate-600">
                     {isExpanded ? "▾" : "▸"}
                   </span>
-                  <div className="hud-mono w-6 shrink-0 text-right text-xs text-slate-500">{r.rank}</div>
+                  <div className="hud-mono w-6 shrink-0 text-right text-xs text-slate-400">{r.rank}</div>
                   <div className="w-28 shrink-0 truncate text-sm text-slate-200">
                     {r.driverName}
                     {isLowConfidence && (

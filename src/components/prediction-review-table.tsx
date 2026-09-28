@@ -46,15 +46,15 @@ function accuracyCallColor(call: AccuracyCall): string {
   if (call === "close") return "text-emerald-500";
   if (call === "off") return "text-amber-400";
   if (call === "miss") return "text-red-400";
-  return "text-slate-500";
+  return "text-slate-400";
 }
 
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="border border-slate-800/80 bg-slate-950/40 px-3 py-2">
-      <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">{label}</p>
+      <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">{label}</p>
       <p className="mt-0.5 text-lg font-bold text-slate-100">{value}</p>
-      {sub && <p className="hud-mono text-[10px] text-slate-500">{sub}</p>}
+      {sub && <p className="hud-mono text-[10px] text-slate-400">{sub}</p>}
     </div>
   );
 }
@@ -98,7 +98,7 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
 
   return (
     <div className="mt-6 flex flex-col gap-6">
-      <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-500">
+      <p className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
         {isFrozen ? (
           <span className="text-emerald-400">
             frozen prediction — made before this race{modelVersion ? ` (model ${modelVersion})` : ""}
@@ -137,7 +137,7 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
               {biggestMisses.map((r) => (
                 <li key={r.driverId} className="flex items-center justify-between gap-3 text-sm">
                   <DriverLine row={r} />
-                  <span className="hud-mono text-xs text-slate-500">
+                  <span className="hud-mono text-xs text-slate-400">
                     predicted #{r.predictedRank} → actual{" "}
                     {r.actualFinish != null ? `#${r.actualFinish}` : r.actualStatus?.toUpperCase() ?? "?"}
                     <span className={`ml-2 font-semibold ${rankErrorColor(r.rankError)}`}>
@@ -156,7 +156,7 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
               {bestCalls.map((r) => (
                 <li key={r.driverId} className="flex items-center justify-between gap-3 text-sm">
                   <DriverLine row={r} />
-                  <span className="hud-mono text-xs text-slate-500">
+                  <span className="hud-mono text-xs text-slate-400">
                     predicted #{r.predictedRank} → actual #{r.actualFinish}
                     <span className="ml-2 font-semibold text-emerald-400">
                       ({r.rankError! > 0 ? "+" : ""}
@@ -203,7 +203,7 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[760px] text-xs">
             <thead>
-              <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-500">
+              <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                 <th className="py-1.5 pr-3 font-medium">Actual</th>
                 <th className="py-1.5 pr-3 font-medium">Driver</th>
                 <th className="py-1.5 pr-3 font-medium text-right">MC #</th>

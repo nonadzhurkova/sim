@@ -1,10 +1,7 @@
-import Link from "next/link";
-import { db } from "@/db";
-import { races } from "@/db/schema";
-import { desc } from "drizzle-orm";
-import { getLatestSeason, listRacesForSeason } from "@/queries/races";
+import { getLatestSeason, getAllSeasons, resolveSeasonParam, listRacesForSeason } from "@/queries/races";
 import { getCurrentRace } from "@/queries/current-race";
 import { RaceList } from "@/components/race-list";
+import { SeasonPicker } from "@/components/season-picker";
 
 /**
  * Full season calendar as its own page — previously the only way to reach
@@ -18,13 +15,9 @@ export default async function RacesPage({
   searchParams: Promise<{ season?: string }>;
 }) {
   const { season: seasonParam } = await searchParams;
-  const latest = await getLatestSeason();
-  const requested = seasonParam ? parseInt(seasonParam, 10) : NaN;
+  const [latest, seasons] = await Promise.all([getLatestSeason(), getAllSeasons()]);
+  const season = resolveSeasonParam(seasonParam, seasons, latest);
 
-  const seasonRows = await db.selectDistinct({ season: races.season }).from(races).orderBy(desc(races.season));
-  const seasons = seasonRows.map((r) => r.season);
-
-  const season = seasons.includes(requested) ? requested : latest;
   const [raceRows, currentRace] = await Promise.all([
     listRacesForSeason(season),
     season === latest ? getCurrentRace(season) : Promise.resolve(null),
@@ -35,21 +28,7 @@ export default async function RacesPage({
       <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Schedule</p>
       <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-100">{season} Races</h1>
-        <div className="flex gap-2">
-          {seasons.map((s) => (
-            <Link
-              key={s}
-              href={`/races?season=${s}`}
-              className={`hud-mono border px-3 py-1 text-[11px] tracking-wider transition-colors ${
-                s === season
-                  ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
-                  : "border-slate-800 text-slate-500 hover:border-slate-700"
-              }`}
-            >
-              {s}
-            </Link>
-          ))}
-        </div>
+        <SeasonPicker basePath="/races" seasons={seasons} activeSeason={season} />
       </div>
 
       <div className="mt-6">

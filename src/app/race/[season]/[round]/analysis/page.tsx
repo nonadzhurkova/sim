@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRaceByRoute } from "@/queries/races";
 import { db } from "@/db";
 import { teams, raceResults, qualifyingResults } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { TeamSelector } from "@/components/team-selector";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 /**
  * Per-team telemetry analysis for one race weekend.
@@ -54,15 +54,16 @@ export default async function AnalysisPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <Link
-        href={`/race/${season}/${round}`}
-        className="hud-mono text-xs uppercase tracking-widest text-cyan-500 hover:text-cyan-300"
-      >
-        ← Back to race
-      </Link>
+      <Breadcrumbs
+        items={[
+          { label: "Races", href: "/races" },
+          { label: race.circuitName, href: `/race/${season}/${round}` },
+          { label: "Analysis" },
+        ]}
+      />
       <h1 className="mt-2 text-2xl font-bold text-slate-100">
         Telemetry Analysis
-        <span className="ml-3 hud-mono text-sm font-normal text-slate-500">
+        <span className="ml-3 hud-mono text-sm font-normal text-slate-400">
           {race.circuitName} · {season} R{round}
         </span>
       </h1>

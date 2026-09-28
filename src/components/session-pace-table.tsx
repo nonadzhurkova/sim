@@ -26,7 +26,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
   if (rows.length === 0) {
     return (
       <HudPanel title={title}>
-        <p className="hud-mono text-xs text-slate-500">NO DATA</p>
+        <p className="hud-mono text-xs text-slate-400">NO DATA</p>
       </HudPanel>
     );
   }
@@ -38,7 +38,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
     <HudPanel title={title}>
       <table className="w-full text-sm">
         <thead>
-          <tr className="hud-mono text-left text-[11px] uppercase tracking-wider text-slate-500">
+          <tr className="hud-mono text-left text-[11px] uppercase tracking-wider text-slate-400">
             <th className="py-1 pr-2 font-medium">Pos</th>
             <th className="py-1 pr-2 font-medium">Driver</th>
             <th className="py-1 font-medium text-right">Gap</th>

@@ -53,7 +53,7 @@ export function TeamSelector({
           // from the previous team should never linger while a new one loads.
           <TeamAnalysisPanel key={selected} raceId={raceId} team={selected} />
         ) : (
-          <p className="hud-mono text-xs text-slate-500">
+          <p className="hud-mono text-xs text-slate-400">
             SELECT A TEAM TO ANALYSE.
           </p>
         )}
