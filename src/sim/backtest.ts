@@ -341,3 +341,169 @@ export async function attachWinnerNames(summary: BacktestSummary): Promise<Backt
   }
   return summary;
 }
+
+/**
+ * One scored future-race prediction from the horizon backtest: race N+k
+ * predicted using only data frozen as of race N (see loadHorizonScorableRaces).
+ */
+export type HorizonRaceBacktest = RaceBacktest & {
+  /** How many races out this target was from the "as of" race. 0 = the very next race after it. */
+  racesAhead: number;
+  /** The race whose post-race state the prediction was frozen at. */
+  asOfRaceId: number;
+};
+
+export type HorizonBucketLabel = "0" | "1-2" | "3-4" | "5-6";
+
+export type HorizonBucketSummary = {
+  label: HorizonBucketLabel;
+  count: number;
+  top1Accuracy: number;
+  top3Accuracy: number;
+  meanLogLoss: number;
+  calibration: CalibrationBucket[];
+  /** Raw (predicted win prob, did they actually win) pairs behind `calibration` — for fitting/checking a Platt calibration against this bucket specifically. */
+  calibrationPoints: { p: number; won: boolean }[];
+};
+
+export type HorizonBacktestSummary = {
+  races: HorizonRaceBacktest[];
+  buckets: HorizonBucketSummary[];
+};
+
+function horizonBucket(racesAhead: number): HorizonBucketLabel {
+  if (racesAhead === 0) return "0";
+  if (racesAhead <= 2) return "1-2";
+  if (racesAhead <= 4) return "3-4";
+  return "5-6";
+}
+
+/**
+ * Loads every (asOfRace, targetRace, racesAhead) triple needed for the
+ * horizon backtest, for one season: for each completed race N in round
+ * order, the next up to `maxRacesAhead` completed races after it become
+ * targets, each built with buildSimContext's `ratingsAsOfRaceId` pinned to N
+ * and `forceSimulatedGrid` forced on — mirroring exactly what production
+ * would have had after race N for a race it hasn't reached yet (see that
+ * param's own doc comment for why this doesn't leak future FP/qualifying
+ * data). Separated from scoring so a k-sweep can reuse the same loaded
+ * contexts across many runs, same rationale as loadScorableRaces.
+ */
+export async function loadHorizonScorableRaces(
+  season: number,
+  maxRacesAhead = 6,
+): Promise<
+  {
+    asOfRaceId: number;
+    racesAhead: number;
+    race: { id: number; season: number; round: number };
+    ctx: NonNullable<Awaited<ReturnType<typeof buildSimContext>>>;
+    actual: { driverId: number; finishPosition: number | null; status: string | null }[];
+  }[]
+> {
+  const seasonRaces = await db
+    .select({ id: races.id, season: races.season, round: races.round })
+    .from(races)
+    .where(eq(races.season, season))
+    .orderBy(asc(races.round));
+
+  // Only races with both a ratings row and a real result are usable as
+  // either an "as of" anchor or a target — a race with no result can't be
+  // scored, and one with no ratings row can't anchor a frozen snapshot.
+  const withResults: typeof seasonRaces = [];
+  for (const race of seasonRaces) {
+    const [hasResult] = await db
+      .select({ id: raceResults.id })
+      .from(raceResults)
+      .where(eq(raceResults.raceId, race.id))
+      .limit(1);
+    const [hasRatings] = await db
+      .select({ id: driverRatings.id })
+      .from(driverRatings)
+      .where(eq(driverRatings.raceId, race.id))
+      .limit(1);
+    if (hasResult && hasRatings) withResults.push(race);
+  }
+
+  const out: Awaited<ReturnType<typeof loadHorizonScorableRaces>> = [];
+  for (let i = 0; i < withResults.length; i++) {
+    const asOfRace = withResults[i];
+    for (let k = 1; k <= maxRacesAhead && i + k < withResults.length; k++) {
+      const target = withResults[i + k];
+      const actual = await db
+        .select({
+          driverId: raceResults.driverId,
+          finishPosition: raceResults.finishPosition,
+          status: raceResults.status,
+        })
+        .from(raceResults)
+        .where(eq(raceResults.raceId, target.id));
+      if (actual.length === 0) continue;
+
+      const ctx = await buildSimContext(
+        target.id,
+        undefined,
+        undefined,
+        false,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        asOfRace.id,
+      );
+      if (!ctx) continue;
+
+      out.push({ asOfRaceId: asOfRace.id, racesAhead: k - 1, race: target, ctx, actual });
+    }
+  }
+  return out;
+}
+
+/**
+ * Scores every loaded horizon triple and groups results by racesAhead
+ * bucket (0, 1-2, 3-4, 5-6 — used to evaluate simulated-grid noise effects
+ * across how far out a race is). Reuses scoreRaces's per-race scoring logic
+ * so both backtest modes stay consistent, then re-groups the flat per-race
+ * results by horizon. racesAhead no longer affects the simulation itself
+ * (HORIZON_NOISE_K was tried and rejected — see project memory) — it's
+ * purely a label here for which bucket a race's result belongs in.
+ */
+export function scoreHorizonRaces(
+  loaded: Awaited<ReturnType<typeof loadHorizonScorableRaces>>,
+  iterations = 4000,
+  overrides?: ModelOverrides,
+): HorizonBacktestSummary {
+  const races: HorizonRaceBacktest[] = [];
+  const calibrationPointsByBucket = new Map<HorizonBucketLabel, { p: number; won: boolean }[]>([
+    ["0", []],
+    ["1-2", []],
+    ["3-4", []],
+    ["5-6", []],
+  ]);
+
+  for (const { asOfRaceId, racesAhead, race, ctx, actual } of loaded) {
+    const single = scoreRaces([{ race, ctx, actual }], iterations, overrides);
+    if (single.races.length === 0) continue;
+    races.push({ ...single.races[0], racesAhead, asOfRaceId });
+    calibrationPointsByBucket.get(horizonBucket(racesAhead))!.push(...single.calibrationPoints);
+  }
+
+  const bucketLabels: HorizonBucketLabel[] = ["0", "1-2", "3-4", "5-6"];
+  const buckets: HorizonBucketSummary[] = bucketLabels.map((label) => {
+    const inBucket = races.filter((r) => horizonBucket(r.racesAhead) === label);
+    const scored = inBucket.filter((r) => r.winnerPredictedRank != null);
+    const withLoss = inBucket.filter((r) => r.logLoss != null);
+    const mean = (xs: number[]) => (xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+    return {
+      label,
+      count: inBucket.length,
+      top1Accuracy: scored.length > 0 ? scored.filter((r) => r.winnerPredictedRank === 1).length / scored.length : 0,
+      top3Accuracy: scored.length > 0 ? scored.filter((r) => r.winnerPredictedRank! <= 3).length / scored.length : 0,
+      meanLogLoss: mean(withLoss.map((r) => r.logLoss!)),
+      calibration: buildCalibration(calibrationPointsByBucket.get(label)!),
+      calibrationPoints: calibrationPointsByBucket.get(label)!,
+    };
+  });
+
+  return { races, buckets };
+}

@@ -17,7 +17,7 @@
  * frozen pre-race prediction can be told apart from one made under
  * different model settings, without having to diff params.ts by date.
  */
-export const MODEL_VERSION = "2026-09-28-platt-refit";
+export const MODEL_VERSION = "2026-09-29-prequali-noise";
 
 /**
  * Relative weight of each pace signal when composing a driver's expected
@@ -127,8 +127,25 @@ export const PACE_NOISE_STD_DEV = 0.35;
  * session that hasn't happened yet. Higher than race noise: a single
  * qualifying lap is far more variable than a race-distance average, and one
  * mistake or a yellow flag costs the whole session.
+ *
+ * Raised from 0.28 (2026-09-29): the horizon backtest (src/sim/backtest.ts's
+ * loadHorizonScorableRaces/scoreHorizonRaces) found pre-qualifying
+ * predictions badly overconfident -- the model's own real-grid Platt fit
+ * (WIN_PROBABILITY_CALIBRATION), when checked against pre-qualifying raw
+ * probabilities, needed a near-identity correction instead, meaning the raw
+ * probabilities were themselves too sharp. Swept 0.28/0.4/0.55/0.7/0.9/1.2:
+ * pooled 2025+2026 log loss on the racesAhead=0 (pre-qualifying) bucket
+ * improved from 2.102 at 0.28 to a minimum of 1.886 at 0.9 (2024 check
+ * season peaks slightly earlier, at 0.7, 1.816); 0.8 sits between both
+ * seasons' optima and was confirmed to land between the 0.7 and 0.9 results
+ * on both. A separate flat pace-noise multiplier for simulated grids
+ * (PRE_QUALI_NOISE_MULT) was tried alongside this and rejected -- a 2D sweep
+ * showed it was dominated by widening this constant alone once QUALI_NOISE_
+ * STD_DEV itself was properly sized. Confirmed real-grid predictions are
+ * bit-for-bit unchanged, since this only feeds simulatedQualiPace, which
+ * only runs when there's no real grid yet.
  */
-export const QUALI_NOISE_STD_DEV = 0.28;
+export const QUALI_NOISE_STD_DEV = 0.8;
 
 /**
  * How much recent qualifying form (vs general race pace) determines a

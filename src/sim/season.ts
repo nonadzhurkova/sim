@@ -1,8 +1,8 @@
 import { db } from "@/db";
 import { races, raceResults, circuits } from "@/db/schema";
 import { eq, and, gt, asc, inArray } from "drizzle-orm";
-import { buildSimContext, simulatedQualiPace, type SimContext } from "./entrants";
-import { createRng, sampleNormal, sampleBernoulli } from "./random";
+import { buildSimContext, simulateRaceIteration, type SimContext } from "./entrants";
+import { createRng } from "./random";
 import { getStandings } from "@/queries/standings";
 import {
   PACE_NOISE_STD_DEV,
@@ -112,18 +112,9 @@ const DEFAULT_SEASON_ITERATIONS = 2000;
 
 /**
  * Simulates one race and returns the finishing order as entrant indices.
- * A trimmed copy of the single-race engine: the season model needs only the
- * order, not the full per-driver statistics, and runs it thousands of times
- * across many races.
- *
- * Known remaining divergence from engine.ts: this always uses the flat
- * PACE_NOISE_STD_DEV, not engine.ts's per-driver noise widened by
- * paceUncertainty (PACE_UNCERTAINTY_WEIGHT). Currently harmless --
- * PACE_UNCERTAINTY_WEIGHT is 0 (tested and rejected, see project memory),
- * so engine.ts's version reduces to the same flat value -- but if that
- * weight is ever revisited, this file would need the same change to stay
- * in sync. Not added preemptively since it would be genuinely dead code
- * until then.
+ * A thin wrapper around entrants.ts's simulateRaceIteration -- the season
+ * model needs only the order, not the full per-driver statistics engine.ts
+ * builds, and runs this thousands of times across many races.
  */
 function simulateRaceOrder(
   ctx: SimContext,
@@ -131,59 +122,27 @@ function simulateRaceOrder(
   scratch: { pace: number[]; grid: number[]; retired: boolean[]; order: number[] },
 ): { order: number[]; retired: boolean[] } {
   const n = ctx.entrants.length;
-  const { pace, grid, retired, order } = scratch;
   const type = ctx.circuitType;
   const gridPenalty =
     (type != null ? GRID_PENALTY_PER_POSITION[type] : undefined) ?? GRID_PENALTY_DEFAULT;
   const scProbability =
     (type != null ? SAFETY_CAR_PROBABILITY[type] : undefined) ?? SAFETY_CAR_PROBABILITY_DEFAULT;
+  const paceNoiseByDriver = new Array(n).fill(PACE_NOISE_STD_DEV);
 
-  // Grid. A future race has no qualifying, so it is simulated every time —
-  // which is also what makes each simulated season differ from the last.
-  // See entrants.ts's simulatedQualiPace for the formula -- shared with
-  // engine.ts's single-race simulation so the two can't silently diverge
-  // again (they did once: this copy kept using expectedPace, which
-  // double-counts qualiForm, after engine.ts's copy was fixed).
-  if (ctx.hasRealGrid) {
-    for (let i = 0; i < n; i++) grid[i] = ctx.entrants[i].gridPosition ?? n;
-  } else {
-    for (let i = 0; i < n; i++) {
-      order[i] = i;
-      pace[i] = simulatedQualiPace(ctx.entrants[i], rng, QUALI_NOISE_STD_DEV);
-    }
-    order.sort((a, b) => pace[a] - pace[b]);
-    for (let pos = 0; pos < n; pos++) grid[order[pos]] = pos + 1;
-  }
-
-  const safetyCar = sampleBernoulli(rng, scProbability);
-  for (let i = 0; i < n; i++) {
-    const e = ctx.entrants[i];
-    retired[i] = sampleBernoulli(rng, e.dnfRate);
-    // Matches engine.ts's per-iteration race-pace step exactly, including
-    // the race-craft grid offset (currently inert at RACE_CRAFT_WEIGHT=0,
-    // but this file previously omitted it entirely -- a real divergence
-    // from the single-race engine that would have silently re-appeared the
-    // moment race craft was ever re-enabled, without touching this copy).
-    const effectiveGrid = grid[i] - (e.raceCraft ?? 0) * RACE_CRAFT_WEIGHT;
-    const gridCost = Math.max(0, effectiveGrid - 1) * gridPenalty;
-    pace[i] = e.expectedPace + sampleNormal(rng, 0, PACE_NOISE_STD_DEV) + gridCost;
-  }
-  if (safetyCar) {
-    let sum = 0;
-    for (let i = 0; i < n; i++) sum += pace[i];
-    const mean = sum / n;
-    const shuffle = PACE_NOISE_STD_DEV * SAFETY_CAR_SHUFFLE_FACTOR;
-    for (let i = 0; i < n; i++) {
-      pace[i] = mean + (pace[i] - mean) * SAFETY_CAR_COMPRESSION + sampleNormal(rng, 0, shuffle);
-    }
-  }
-
-  for (let i = 0; i < n; i++) order[i] = i;
-  order.sort((a, b) => {
-    if (retired[a] !== retired[b]) return retired[a] ? 1 : -1;
-    return pace[a] - pace[b];
-  });
-  return { order, retired };
+  return simulateRaceIteration(
+    ctx,
+    rng,
+    {
+      paceNoiseByDriver,
+      qualiNoiseStdDev: QUALI_NOISE_STD_DEV,
+      gridPenaltyPerPosition: gridPenalty,
+      raceCraftWeight: RACE_CRAFT_WEIGHT,
+      safetyCarProbability: scProbability,
+      safetyCarCompression: SAFETY_CAR_COMPRESSION,
+      safetyCarShuffleStdDev: PACE_NOISE_STD_DEV * SAFETY_CAR_SHUFFLE_FACTOR,
+    },
+    { grid: scratch.grid, effectivePace: scratch.pace, retired: scratch.retired, order: scratch.order },
+  );
 }
 
 /** One event from a streamed season projection. */
@@ -531,12 +490,18 @@ export async function* streamSeasonProjection(
     // win" (see TitleOdds.expectedWins). Calibrated the same way each race's
     // own contenders list is below, so the two stay consistent with each
     // other rather than one being raw hit-rate and the other calibrated.
+    // Calibration only applies to a race whose grid is real/quali-derived --
+    // see run-simulation.ts's calibrateOutcome for why (WIN_PROBABILITY_
+    // CALIBRATION doesn't transfer to simulated-grid predictions).
+    const hasRealGridByRaceId = new Map(remaining.map((ctx) => [ctx.raceId, ctx.hasRealGrid]));
     const expectedWinsByDriverId = new Map<number, number>();
     const expectedWinsByTeamId = new Map<number, number>();
-    for (const winnerHits of raceWinnerHits.values()) {
+    for (const [raceId, winnerHits] of raceWinnerHits.entries()) {
       if (winnerHits.size === 0) continue;
       const fullField = [...winnerHits.entries()].map(([driverId, hits]) => ({ driverId, rawWinPct: hits / safe }));
-      const calibratedRaw = fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION));
+      const calibratedRaw = hasRealGridByRaceId.get(raceId)
+        ? fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION))
+        : fullField.map((f) => f.rawWinPct);
       const calibratedSum = calibratedRaw.reduce((a, b) => a + b, 0);
       fullField.forEach((f, i) => {
         const winPct = calibratedSum > 0 ? calibratedRaw[i] / calibratedSum : f.rawWinPct;
@@ -603,12 +568,16 @@ export async function* streamSeasonProjection(
         // Calibrate over the full field before slicing to the top 3 shown,
         // so their percentages stay honest relative to the whole field's
         // probability mass (same treatment as the single-race prediction —
-        // see run-simulation.ts's calibrateOutcome).
+        // see run-simulation.ts's calibrateOutcome). Only applied when this
+        // race's grid is real/quali-derived; a still-simulated grid gets
+        // raw probabilities, same rule as the single-race path.
         const fullField = [...winnerHits.entries()].map(([driverId, hits]) => ({
           driverId,
           rawWinPct: hits / safe,
         }));
-        const calibratedRaw = fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION));
+        const calibratedRaw = ctx.hasRealGrid
+          ? fullField.map((f) => applyCalibration(f.rawWinPct, WIN_PROBABILITY_CALIBRATION))
+          : fullField.map((f) => f.rawWinPct);
         const calibratedSum = calibratedRaw.reduce((a, b) => a + b, 0);
 
         const contenders = fullField

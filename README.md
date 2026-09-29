@@ -122,6 +122,20 @@ transform fitted against real outcomes so a "30% to win" pick actually wins
 about 30% of the time. This never changes who the model favors, only how
 honest the stated percentage is.
 
+This calibration is applied **only when the grid is real or quali-derived**
+(`calibrateOutcome` in `run-simulation.ts`, and the equivalent per-race
+gating in `season.ts`'s championship projection). `WIN_PROBABILITY_
+CALIBRATION` was fit exclusively on real-grid backtest predictions; a
+dedicated horizon backtest (walking forward from each past race and
+predicting several races out, with no real grid and no practice data — see
+`src/sim/backtest.ts`'s `loadHorizonScorableRaces`/`scoreHorizonRaces`)
+found that applying it to pre-qualifying predictions actively overcorrects,
+while a fresh Platt fit on pre-qualifying predictions alone comes out close
+to the identity transform. Rather than maintain a second fitted model, a
+pre-qualifying prediction is shown with its raw (uncalibrated) probabilities
+— see `QUALI_NOISE_STD_DEV` below for why those raw probabilities are
+already close to honest.
+
 ### Simulation pattern
 
 The engine (`simulationIterator` in `src/sim/engine.ts`) is a plain
@@ -217,7 +231,7 @@ to calibrate:
 | variable | value | meaning |
 |---|---|---|
 | `PACE_NOISE_STD_DEV` | 0.35 | per-lap race pace noise (sec/lap std dev) — the single biggest calibration knob; too low and the favorite always wins, too high and it's a coin toss |
-| `QUALI_NOISE_STD_DEV` | 0.28 | extra noise for a simulated (not-yet-run) qualifying session |
+| `QUALI_NOISE_STD_DEV` | 0.8 (was 0.28) | extra noise for a simulated (not-yet-run) qualifying session — raised 2026-09-29 after the horizon backtest found pre-qualifying predictions badly overconfident; swept 0.28-1.2, pooled 2025+2026 log loss on pre-qualifying predictions improved from 2.102 to a minimum around 1.886-1.904 (0.7-0.9), with 0.8 landing between both seasons' optima on both the tuning and check seasons. Real-grid predictions are untouched — this only feeds the simulated-grid path |
 | `QUALI_FORM_BLEND` | 0.5 | how much recent quali form vs. race pace determines a simulated grid |
 | `GRID_PENALTY_PER_POSITION` | street 0.26 / technical 0.21 / high_speed 0.18 | effective pace cost per grid slot, by circuit type — the single largest accuracy lever found so far |
 | `GRID_PENALTY_DEFAULT` | 0.2 | fallback when circuit type is unknown |
@@ -336,6 +350,28 @@ noted:
   race/qualifying pace. Sprint *points* (for standings) and sprint
   *sessions* (for the live session-pace display) are unaffected by this
   rejection and are fully supported.
+- `HORIZON_NOISE_K` — widening pace noise further the more races out a
+  prediction is (races beyond the very next one use ratings frozen at the
+  latest completed race, so form/upgrades/pecking order have had time to
+  shift by the time they're actually run). A dedicated horizon backtest
+  (`loadHorizonScorableRaces`/`scoreHorizonRaces` in `backtest.ts`) initially
+  showed a real-looking improvement sweeping `k` up to ~0.8, in both a linear
+  and a `sqrt(racesAhead)` shape — but the effect disappeared entirely once
+  `QUALI_NOISE_STD_DEV` was sized correctly for the (also real) pre-qualifying
+  overconfidence problem: with that fixed, adding horizon growth on top made
+  log loss worse almost monotonically in every horizon bucket, on all three
+  backtested seasons. The apparent horizon effect was a confound — every
+  race in that harness has a simulated grid regardless of how far out it is,
+  so it was really re-discovering the same simulated-grid-needs-more-noise
+  finding from a different angle, not a separate real-world effect.
+- `PRE_QUALI_NOISE_MULT` — a flat multiplier on pace noise whenever the grid
+  is simulated (as opposed to widening `QUALI_NOISE_STD_DEV`, the noise on
+  the simulated grid itself). Also improved pre-qualifying log loss in
+  isolation, but a 2D sweep against `QUALI_NOISE_STD_DEV` showed it was
+  dominated everywhere: any combination with the multiplier above 1.0-1.5
+  did worse than `QUALI_NOISE_STD_DEV` alone at its own optimum. Widening
+  the grid-uncertainty noise directly captures the same effect more
+  effectively than blanket-widening race-pace noise as a proxy for it.
 
 **Retested and adopted — the one exception to the pattern below:** the same
 XGBoost approach, retrained on 13 seasons (2014-2026, ~5,200 rows) from a

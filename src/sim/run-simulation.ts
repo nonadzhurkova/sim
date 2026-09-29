@@ -39,8 +39,20 @@ export async function isBeforeRaceStart(raceId: number): Promise<boolean> {
  * per-driver correction can't change who's the favourite, but applied
  * independently per driver it no longer sums to 1 across the field, so it's
  * renormalized back to a proper distribution afterward.
+ *
+ * Only applied when the grid is real or quali-derived (outcome.hasRealGrid).
+ * WIN_PROBABILITY_CALIBRATION was fit against real-grid predictions only,
+ * and the horizon backtest found it doesn't transfer to pre-qualifying
+ * (simulated-grid) predictions -- checked against those, it applies a
+ * substantial, wrong correction where a near-identity transform (or none at
+ * all) already fits close to observed outcomes (see QUALI_NOISE_STD_DEV's
+ * own doc comment for the backtest this is based on). A second Platt model
+ * fit specifically for the simulated-grid case was deliberately not built --
+ * raw probabilities there are already close to calibrated, so identity is
+ * the simpler, equally-honest choice.
  */
 export function calibrateOutcome(outcome: SimulationOutcome): SimulationOutcome {
+  if (!outcome.hasRealGrid) return outcome;
   const calibratedRaw = outcome.drivers.map((d) => applyCalibration(d.winPct, WIN_PROBABILITY_CALIBRATION));
   const sum = calibratedRaw.reduce((a, b) => a + b, 0);
   return {

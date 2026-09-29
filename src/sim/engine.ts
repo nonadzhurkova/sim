@@ -1,5 +1,5 @@
-import { createRng, sampleNormal, sampleBernoulli } from "./random";
-import { simulatedQualiPace, type SimContext, type SimEntrant } from "./entrants";
+import { createRng } from "./random";
+import { simulateRaceIteration, type SimContext, type SimEntrant } from "./entrants";
 import {
   PACE_NOISE_STD_DEV,
   QUALI_NOISE_STD_DEV,
@@ -146,6 +146,9 @@ export function* simulationIterator(
     overrides.safetyCarProbability ??
     (ctx.circuitType != null ? SAFETY_CAR_PROBABILITY[ctx.circuitType] : undefined) ??
     SAFETY_CAR_PROBABILITY_DEFAULT;
+  // Safety-car shuffle noise scales off the *base* (un-widened) pace noise,
+  // matching production's existing formula.
+  const safetyCarShuffleStdDev = paceNoise * (overrides.safetyCarShuffleFactor ?? SAFETY_CAR_SHUFFLE_FACTOR);
 
   const tallies: Tally[] = entrants.map(() => ({
     wins: 0,
@@ -160,82 +163,27 @@ export function* simulationIterator(
 
   // Scratch arrays reused across iterations — at 8,000 iterations x 20 cars,
   // reallocating per iteration is a meaningful share of total runtime.
-  const grid = new Array<number>(n);
-  const effectivePace = new Array<number>(n);
-  const retired = new Array<boolean>(n);
-  const order = new Array<number>(n);
+  const scratch = {
+    grid: new Array<number>(n),
+    effectivePace: new Array<number>(n),
+    retired: new Array<boolean>(n),
+    order: new Array<number>(n),
+  };
 
   for (let iter = 0; iter < iterations; iter++) {
-    // --- 1. grid ---
-    if (ctx.hasRealGrid) {
-      for (let i = 0; i < n; i++) {
-        // A driver without a qualifying position (didn't set a time) starts last.
-        grid[i] = entrants[i].gridPosition ?? n;
-      }
-    } else {
-      // Simulate qualifying: pace plus a wider one-lap noise term, ranked.
-      // See entrants.ts's simulatedQualiPace for the formula and why it uses
-      // racePaceExQualiForm rather than expectedPace (avoids double-counting
-      // qualiForm, which expectedPace already includes).
-      for (let i = 0; i < n; i++) {
-        order[i] = i;
-        effectivePace[i] = simulatedQualiPace(entrants[i], rng, qualiNoise);
-      }
-      order.sort((a, b) => effectivePace[a] - effectivePace[b]);
-      for (let pos = 0; pos < n; pos++) grid[order[pos]] = pos + 1;
-    }
+    const { order, retired } = simulateRaceIteration(ctx, rng, {
+      paceNoiseByDriver,
+      qualiNoiseStdDev: qualiNoise,
+      gridPenaltyPerPosition: gridPenalty,
+      raceCraftWeight,
+      safetyCarProbability,
+      safetyCarCompression: scCompression,
+      safetyCarShuffleStdDev,
+    }, scratch);
 
-    // --- 2-4. race pace, retirements, safety car ---
-    const safetyCar = sampleBernoulli(rng, safetyCarProbability);
+    for (let i = 0; i < n; i++) tallies[i].gridSum += scratch.grid[i];
 
-    for (let i = 0; i < n; i++) {
-      const e = entrants[i];
-      retired[i] = sampleBernoulli(rng, e.dnfRate);
-      const paceRoll = e.expectedPace + sampleNormal(rng, 0, paceNoiseByDriver[i]);
-      // Grid position is a real handicap: a fast car starting 15th loses time
-      // stuck behind slower cars, and how much depends on the circuit.
-      // Race craft shifts the effective slot: a driver who reliably beats
-      // their grid position is simulated as starting further forward, which
-      // is where that skill actually shows up.
-      const effectiveGrid = grid[i] - (e.raceCraft ?? 0) * raceCraftWeight;
-      const gridCost = Math.max(0, effectiveGrid - 1) * gridPenalty;
-      effectivePace[i] = paceRoll + gridCost;
-      tallies[i].gridSum += grid[i];
-    }
-
-    // A safety car has to be modelled as *shuffling*, not as a uniform
-    // slowdown. Any monotonic transform applied equally to every car — a
-    // shared multiplier, or shrinking all cars toward the field mean —
-    // preserves the running order exactly and therefore cannot change a
-    // single finishing position (verified: sweeping the old multiplier
-    // changed no metric at all). What a safety car really does is compress
-    // the gaps and then redistribute position through pit-window luck, so
-    // it shrinks each car's advantage toward the field mean *and* adds a
-    // burst of extra noise on top, which is what actually reorders cars.
-    if (safetyCar) {
-      let sum = 0;
-      for (let i = 0; i < n; i++) sum += effectivePace[i];
-      const fieldMean = sum / n;
-      const shuffle =
-        paceNoise * (overrides.safetyCarShuffleFactor ?? SAFETY_CAR_SHUFFLE_FACTOR);
-      for (let i = 0; i < n; i++) {
-        effectivePace[i] =
-          fieldMean +
-          (effectivePace[i] - fieldMean) * scCompression +
-          sampleNormal(rng, 0, shuffle);
-      }
-    }
-
-    // --- 5. finishing order ---
-    // Finishers sort by effective pace; retirements are classified behind all
-    // of them, which matches how F1 orders a DNF in the final standings.
-    for (let i = 0; i < n; i++) order[i] = i;
-    order.sort((a, b) => {
-      if (retired[a] !== retired[b]) return retired[a] ? 1 : -1;
-      return effectivePace[a] - effectivePace[b];
-    });
-
-    // --- 6. record ---
+    // --- record ---
     for (let pos = 0; pos < n; pos++) {
       const i = order[pos];
       const t = tallies[i];

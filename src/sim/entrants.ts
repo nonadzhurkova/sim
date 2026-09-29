@@ -16,7 +16,7 @@ import { computeRacePaceProjection } from "@/ratings/practice-pace";
 import { computeQualiForm } from "@/ratings/quali-form";
 import { computeRaceForm } from "@/ratings/race-form";
 import { computeRaceCraft } from "@/ratings/race-craft";
-import { sampleNormal } from "./random";
+import { sampleNormal, sampleBernoulli } from "./random";
 import {
   PACE_WEIGHTS,
   DEFAULT_DNF_RATE,
@@ -103,6 +103,115 @@ export function simulatedQualiPace(
 }
 
 /**
+ * Resolved numeric knobs for one race's simulation, after circuit-type
+ * lookups and ModelOverrides/horizon-noise adjustments have already been
+ * applied by the caller. Kept distinct from params.ts's raw constants so
+ * this function never has to know about circuit types, overrides, or where
+ * PACE_NOISE_STD_DEV itself is widened for horizon uncertainty.
+ */
+export type RaceIterationParams = {
+  /** Per-driver pace-noise std dev (already widened by paceUncertainty and any horizon multiplier), same length/order as ctx.entrants. */
+  paceNoiseByDriver: number[];
+  qualiNoiseStdDev: number;
+  gridPenaltyPerPosition: number;
+  raceCraftWeight: number;
+  safetyCarProbability: number;
+  safetyCarCompression: number;
+  /** Extra noise during a safety car, in absolute seconds (already multiplied by the base pace-noise std dev). */
+  safetyCarShuffleStdDev: number;
+};
+
+/** Scratch arrays reused across iterations by simulateRaceIteration's caller, sized to the field. */
+export type RaceIterationScratch = {
+  grid: number[];
+  effectivePace: number[];
+  retired: boolean[];
+  order: number[];
+};
+
+/**
+ * Runs the shared per-iteration race logic -- grid, pace + noise, DNFs,
+ * safety car, grid penalty, finishing order -- used by both engine.ts
+ * (single-race prediction) and season.ts (season/championship projection).
+ *
+ * Pulled out as one function after the two call sites drifted once already
+ * (season.ts's own copy silently missed the raceCraft grid-position offset
+ * engine.ts applied -- see this file's simulatedQualiPace doc comment for
+ * the earlier, related qualiForm double-count bug). A single shared
+ * implementation makes that class of bug impossible to reintroduce.
+ *
+ * Mutates and returns `scratch`'s arrays in place rather than allocating --
+ * at thousands of iterations x ~20 cars, per-iteration allocation is a
+ * meaningful share of runtime (see engine.ts's own note on this).
+ */
+export function simulateRaceIteration(
+  ctx: Pick<SimContext, "entrants" | "hasRealGrid">,
+  rng: () => number,
+  params: RaceIterationParams,
+  scratch: RaceIterationScratch,
+): { order: number[]; retired: boolean[] } {
+  const { entrants, hasRealGrid } = ctx;
+  const n = entrants.length;
+  const { grid, effectivePace, retired, order } = scratch;
+  const {
+    paceNoiseByDriver,
+    qualiNoiseStdDev,
+    gridPenaltyPerPosition,
+    raceCraftWeight,
+    safetyCarProbability,
+    safetyCarCompression,
+    safetyCarShuffleStdDev,
+  } = params;
+
+  // --- grid ---
+  if (hasRealGrid) {
+    for (let i = 0; i < n; i++) {
+      grid[i] = entrants[i].gridPosition ?? n;
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      order[i] = i;
+      effectivePace[i] = simulatedQualiPace(entrants[i], rng, qualiNoiseStdDev);
+    }
+    order.sort((a, b) => effectivePace[a] - effectivePace[b]);
+    for (let pos = 0; pos < n; pos++) grid[order[pos]] = pos + 1;
+  }
+
+  // --- race pace, retirements, safety car ---
+  const safetyCar = sampleBernoulli(rng, safetyCarProbability);
+
+  for (let i = 0; i < n; i++) {
+    const e = entrants[i];
+    retired[i] = sampleBernoulli(rng, e.dnfRate);
+    const paceRoll = e.expectedPace + sampleNormal(rng, 0, paceNoiseByDriver[i]);
+    const effectiveGrid = grid[i] - (e.raceCraft ?? 0) * raceCraftWeight;
+    const gridCost = Math.max(0, effectiveGrid - 1) * gridPenaltyPerPosition;
+    effectivePace[i] = paceRoll + gridCost;
+  }
+
+  if (safetyCar) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += effectivePace[i];
+    const fieldMean = sum / n;
+    for (let i = 0; i < n; i++) {
+      effectivePace[i] =
+        fieldMean +
+        (effectivePace[i] - fieldMean) * safetyCarCompression +
+        sampleNormal(rng, 0, safetyCarShuffleStdDev);
+    }
+  }
+
+  // --- finishing order ---
+  for (let i = 0; i < n; i++) order[i] = i;
+  order.sort((a, b) => {
+    if (retired[a] !== retired[b]) return retired[a] ? 1 : -1;
+    return effectivePace[a] - effectivePace[b];
+  });
+
+  return { order, retired };
+}
+
+/**
  * Combines the available pace signals into one expected-pace number.
  * Weights come from PACE_WEIGHTS and are renormalized over whichever signals
  * are present, so a missing signal dilutes nothing — it just leaves the
@@ -168,8 +277,22 @@ export async function buildSimContext(
   qualiFormLookback?: number,
   /** See ratings/quali-form.ts's computeQualiForm — averaging mode override for the backtest harness; production leaves this unset so computeQualiForm's own "trimmed" default applies. */
   qualiFormAveragingMode?: import("@/ratings/quali-form").AveragingMode,
+  /**
+   * Used only by the horizon backtest (src/sim/backtest.ts): pretends ratings
+   * are frozen as of this earlier race instead of `raceId`'s own row, and
+   * suppresses practice pace / race-pace projection entirely (a real future
+   * race has no FP sessions yet, but `raceId` here already happened
+   * historically and its FP data is sitting in the DB — using it directly
+   * would leak information the model wouldn't actually have had). Everything
+   * else — the field, circuit type, grid (still forced simulated by the
+   * caller) — still comes from `raceId` itself, since that's the race being
+   * predicted. Defaults to unset, i.e. today's behavior (ratings as-of the
+   * target race itself).
+   */
+  ratingsAsOfRaceId?: number,
 ): Promise<SimContext | null> {
   const weights = { ...PACE_WEIGHTS, ...weightOverrides };
+  const ratingsRaceId = ratingsAsOfRaceId ?? raceId;
   const [race] = await db
     .select({
       id: races.id,
@@ -182,6 +305,15 @@ export async function buildSimContext(
     .innerJoin(circuits, eq(races.circuitId, circuits.id))
     .where(eq(races.id, raceId));
   if (!race) return null;
+
+  const ratingsRace =
+    ratingsAsOfRaceId != null
+      ? (await db
+          .select({ season: races.season, round: races.round })
+          .from(races)
+          .where(eq(races.id, ratingsAsOfRaceId)))[0]
+      : race;
+  if (!ratingsRace) return null;
 
   const [ratingRows, teamRatingRows, qualiRows, gridRows, racePaceProjection] = await Promise.all([
     db
@@ -196,11 +328,11 @@ export async function buildSimContext(
       })
       .from(driverRatings)
       .innerJoin(drivers, eq(driverRatings.driverId, drivers.id))
-      .where(eq(driverRatings.raceId, raceId)),
+      .where(eq(driverRatings.raceId, ratingsRaceId)),
     db
       .select({ teamId: teamRatings.teamId, carStrength: teamRatings.carStrength })
       .from(teamRatings)
-      .where(eq(teamRatings.raceId, raceId)),
+      .where(eq(teamRatings.raceId, ratingsRaceId)),
     db
       .select({ driverId: qualifyingResults.driverId, position: qualifyingResults.position })
       .from(qualifyingResults)
@@ -214,7 +346,7 @@ export async function buildSimContext(
       .select({ driverId: raceResults.driverId, gridPosition: raceResults.gridPosition })
       .from(raceResults)
       .where(eq(raceResults.raceId, raceId)),
-    computeRacePaceProjection(raceId),
+    ratingsAsOfRaceId != null ? Promise.resolve(new Map()) : computeRacePaceProjection(raceId),
   ]);
 
   if (ratingRows.length === 0) return null;
@@ -287,10 +419,10 @@ export async function buildSimContext(
 
   const fieldDriverIdList = fieldRatings.map((r) => r.driverId);
   const [teamsByDriver, qualiFormByDriver, raceFormByDriver, raceCraftByDriver] = await Promise.all([
-    getDriverTeamsAsOf(raceId, fieldDriverIdList),
-    computeQualiForm(raceId, fieldDriverIdList, qualiFormLookback ?? 5, includeSprintsInForm, qualiFormHalfLife, qualiFormAveragingMode),
-    computeRaceForm(raceId, fieldDriverIdList, 5, includeSprintsInForm),
-    computeRaceCraft(race.season, race.round),
+    getDriverTeamsAsOf(ratingsRaceId, fieldDriverIdList),
+    computeQualiForm(ratingsRaceId, fieldDriverIdList, qualiFormLookback ?? 5, includeSprintsInForm, qualiFormHalfLife, qualiFormAveragingMode),
+    computeRaceForm(ratingsRaceId, fieldDriverIdList, 5, includeSprintsInForm),
+    computeRaceCraft(ratingsRace.season, ratingsRace.round),
   ]);
   const carStrengthByTeam = new Map(
     teamRatingRows
