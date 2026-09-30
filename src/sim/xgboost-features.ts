@@ -30,13 +30,14 @@ export type XgboostFeatureRow = {
   driverDnfRate: number | null;
   constructorFormFinish: number | null;
   constructorDnfRate: number | null;
-  era: "hybrid_narrow_2014_2016" | "hybrid_wide_2017_2021" | "ground_effect_2022_2026";
+  era: "hybrid_narrow_2014_2016" | "hybrid_wide_2017_2021" | "ground_effect_2022_2025" | "pu_aero_2026";
 };
 
 function eraFor(season: number): XgboostFeatureRow["era"] {
   if (season <= 2016) return "hybrid_narrow_2014_2016";
   if (season <= 2021) return "hybrid_wide_2017_2021";
-  return "ground_effect_2022_2026";
+  if (season <= 2025) return "ground_effect_2022_2025";
+  return "pu_aero_2026";
 }
 
 type FormRow = { raceId: number; driverId: number; teamId: number | null; finishPosition: number | null; status: string | null };

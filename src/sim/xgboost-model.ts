@@ -40,19 +40,25 @@ type XgboostModel = {
   dnfClassifier: { baseScore: number; trees: TreeNode[] };
 };
 
-let cachedModel: XgboostModel | null = null;
+const DEFAULT_MODEL_PATH = join(process.cwd(), "scripts", "xgboost", "model", "model.json");
 
-function loadModel(): XgboostModel {
-  if (cachedModel) return cachedModel;
-  const path = join(process.cwd(), "scripts", "xgboost", "model", "model.json");
-  cachedModel = JSON.parse(readFileSync(path, "utf-8"));
-  return cachedModel!;
+// Keyed by resolved path, so a caller loading a fold model (see
+// src/sim/evaluate.ts) doesn't evict or get evicted by the cached
+// production model -- both can be held at once.
+const modelCache = new Map<string, XgboostModel>();
+
+function loadModel(modelPath: string = DEFAULT_MODEL_PATH): XgboostModel {
+  const cached = modelCache.get(modelPath);
+  if (cached) return cached;
+  const model = JSON.parse(readFileSync(modelPath, "utf-8"));
+  modelCache.set(modelPath, model);
+  return model;
 }
 
 /** Returns null if scripts/xgboost/train.py hasn't been run yet. */
-export function xgboostModelAvailable(): boolean {
+export function xgboostModelAvailable(modelPath?: string): boolean {
   try {
-    loadModel();
+    loadModel(modelPath);
     return true;
   } catch {
     return false;
@@ -109,7 +115,7 @@ export type XgboostFeatureInput = {
   driverDnfRate: number | null;
   constructorFormFinish: number | null;
   constructorDnfRate: number | null;
-  era: "hybrid_narrow_2014_2016" | "hybrid_wide_2017_2021" | "ground_effect_2022_2026";
+  era: "hybrid_narrow_2014_2016" | "hybrid_wide_2017_2021" | "ground_effect_2022_2025" | "pu_aero_2026";
 };
 
 export type XgboostPrediction = {
@@ -117,6 +123,8 @@ export type XgboostPrediction = {
   predFinishPosition: number;
   predDnfProb: number;
   winProbability: number;
+  /** Win probability before Platt calibration -- renormalized across the field the same way, but skipping the calibration step. For the evaluation harness (src/sim/evaluate.ts), which reports both raw and calibrated for a fair MC-vs-XGBoost comparison. */
+  rawWinProbability: number;
 };
 
 /**
@@ -124,9 +132,13 @@ export type XgboostPrediction = {
  * and a calibrated win probability (Platt-scaled, then renormalized across
  * the field the same way run-simulation.ts's calibrateOutcome does for the
  * production model's own calibration).
+ *
+ * `modelPath` defaults to the production model.json; the evaluation harness
+ * (src/sim/evaluate.ts) passes a fold-specific path instead, so a backtest
+ * never scores a race with a model that was trained on it.
  */
-export function predictRace(entrants: XgboostFeatureInput[]): XgboostPrediction[] {
-  const model = loadModel();
+export function predictRace(entrants: XgboostFeatureInput[], modelPath?: string): XgboostPrediction[] {
+  const model = loadModel(modelPath);
 
   const rows = entrants.map((e) => {
     const filled: Record<string, number> = {
@@ -138,7 +150,8 @@ export function predictRace(entrants: XgboostFeatureInput[]): XgboostPrediction[
       constructorDnfRate: e.constructorDnfRate ?? model.featureMedians.constructorDnfRate,
       era_hybrid_narrow_2014_2016: e.era === "hybrid_narrow_2014_2016" ? 1 : 0,
       era_hybrid_wide_2017_2021: e.era === "hybrid_wide_2017_2021" ? 1 : 0,
-      era_ground_effect_2022_2026: e.era === "ground_effect_2022_2026" ? 1 : 0,
+      era_ground_effect_2022_2025: e.era === "ground_effect_2022_2025" ? 1 : 0,
+      era_pu_aero_2026: e.era === "pu_aero_2026" ? 1 : 0,
     };
     const predFinishPosition = evalForest(model.finishPositionRegressor.trees, model.finishPositionRegressor.baseScore, filled);
     const dnfLogit = evalForest(model.dnfClassifier.trees, logit(model.dnfClassifier.baseScore), filled);
@@ -158,5 +171,6 @@ export function predictRace(entrants: XgboostFeatureInput[]): XgboostPrediction[
     predFinishPosition: r.predFinishPosition,
     predDnfProb: r.predDnfProb,
     winProbability: calibratedSum > 0 ? calibrated[i] / calibratedSum : rawWinProb[i],
+    rawWinProbability: rawWinProb[i],
   }));
 }

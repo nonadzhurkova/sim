@@ -42,10 +42,17 @@ def build_feature_table(min_year: int = 2014, max_year: int = 2026) -> pd.DataFr
     )
 
     races = races.copy()
+    # Era boundaries are fixed calendar years, independent of max_year (a
+    # fold's training cutoff) -- previously the last bin's upper edge WAS
+    # max_year, so a fold's era labels silently depended on which fold it
+    # was (e.g. fold-2024's "ground_effect" bin only spanned 2022-2023). 2026
+    # split out on its own: new power units and active aero make it a
+    # distinct regulation era from 2022-2025's ground-effect cars, not a
+    # continuation of it.
     races["era"] = pd.cut(
         races["year"],
-        bins=[min_year - 1, 2016, 2021, max_year],
-        labels=["hybrid_narrow_2014_2016", "hybrid_wide_2017_2021", "ground_effect_2022_2026"],
+        bins=[min_year - 1, 2016, 2021, 2025, max(max_year, 2026)],
+        labels=["hybrid_narrow_2014_2016", "hybrid_wide_2017_2021", "ground_effect_2022_2025", "pu_aero_2026"],
     )
 
     df = results.merge(races, on="raceId", how="inner")
