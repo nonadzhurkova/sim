@@ -326,6 +326,14 @@ export const xgboostPredictions = pgTable(
     predFinishPosition: real("pred_finish_position"),
     predDnfProb: real("pred_dnf_prob"),
     winProbability: real("win_probability"),
+    // Pre-Platt-calibration win probability (renormalized only) -- stored
+    // separately from winProbability so the production MC+XGBoost blend
+    // (BLEND_ALPHA in params.ts) can read it back later without
+    // recomputing XGBoost live. XGBoost's own Platt calibration was found
+    // to make 2 of 3 seasons worse than raw (see README), so this is also
+    // what the blend was tuned against -- winProbability above stays purely
+    // for the standalone XGBoost panel's own display.
+    rawWinProbability: real("raw_win_probability"),
     predictedAt: timestamp("predicted_at").defaultNow(),
     predictedBeforeRace: boolean("predicted_before_race"),
     modelVersion: text("model_version"),

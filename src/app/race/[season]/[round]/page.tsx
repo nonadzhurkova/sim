@@ -8,7 +8,7 @@ import { RaceHeader } from "@/components/race-header";
 import { SessionSchedulePanel } from "@/components/session-schedule-panel";
 import { SessionPaceTable } from "@/components/session-pace-table";
 import { RaceComparison } from "@/components/race-comparison";
-import { PredictionTabs } from "@/components/prediction-tabs";
+import { RacePredictionPanel } from "@/components/race-prediction-panel";
 import { RaceResultSummary } from "@/components/race-result-summary";
 import { FastestLapBanner } from "@/components/fastest-lap-banner";
 import { PaceProjectionPanel } from "@/components/pace-projection-panel";
@@ -83,15 +83,15 @@ export default async function RacePage({
           visitor is more likely asking "what happened, and did the model get
           it right" than "run me a simulation" -- so a finished race leads
           with RaceResultSummary (result vs. frozen prediction) instead, and
-          the interactive PredictionTabs (still useful for validation, see
-          its own comment) moves further down rather than disappearing. */}
+          the interactive RacePredictionPanel (still useful for validation,
+          see its own comment) moves further down rather than disappearing. */}
       {isFinished ? (
         <section className="mt-6">
           <RaceResultSummary review={review} season={season} round={round} />
         </section>
       ) : (
         <section className="mt-6">
-          <PredictionTabs raceId={race.id} />
+          <RacePredictionPanel raceId={race.id} />
         </section>
       )}
 
@@ -146,7 +146,7 @@ export default async function RacePage({
             {"//"} Model prediction (interactive)
           </p>
           <div className="mt-4">
-            <PredictionTabs raceId={race.id} />
+            <RacePredictionPanel raceId={race.id} />
           </div>
         </section>
       )}

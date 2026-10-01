@@ -289,12 +289,18 @@ what the model actually said about a real future race before it happened,
 which by construction can't have been tuned to match.
 
 Correction to an earlier claim in this file: 2024-2026 are **not** one
-regulation era. `ground_effect_2022_2026` (the label used by the XGBoost
-overlay's era feature) is a data-dependent bin — its upper edge is just
-however far the ingested data currently reaches, not a claim that the rules
-haven't changed. 2026 introduced new power units and active aero, a real
-regulation change from 2022-2025; the feature currently mislabels it as the
-same era, a known gap (see "What's been tried" for the XGBoost overlay).
+regulation era. 2026 introduced new power units and active aero, a real
+regulation change from 2022-2025's ground-effect cars. This was originally
+mislabeled as one era (`ground_effect_2022_2026`) because the XGBoost
+overlay's era bin used the training cutoff year as its own upper edge rather
+than a fixed calendar boundary — fixed by splitting 2026 into its own
+`pu_aero_2026` label with fixed bin edges (`scripts/xgboost/build_features.py`).
+fold-2024/fold-2025 (trained on pre-2026 data only) are unaffected; fold-2026
+regresses slightly on its own 2026 test rows (top-1 60.0%->53.3%) since that
+fold never trains on a 2026 row and the new era falls back to the intercept
+— expected to improve as more 2026 data accumulates. The production
+`model.json` trains on all of 2014-2026 and does learn the new era from real
+rows, so the label is kept correct rather than reverted.
 
 ### What's been tried
 
@@ -430,10 +436,12 @@ isn't ingested yet.
 
 ## XGBoost overlay
 
-A second, experimental prediction ("Race Prediction — XGBoost (experimental)"
-on a race page, alongside the Monte Carlo one, not replacing it) trained on
-13 seasons (2014-2026, ~5,200 rows) of historical data from a public dataset
-(tracinginsights/RaceData), not just this app's own ingested history.
+A second prediction trained on 13 seasons (2014-2026, ~5,200 rows) of
+historical data from a public dataset (tracinginsights/RaceData), not just
+this app's own ingested history. As of the blended production prediction
+(see "Blended prediction" below) this is one of the two models feeding the
+race page's main panel, not a separate experimental tab — its own
+standalone output is still visible as a diagnostic panel on `/model`.
 
 **Architecture — Python trains once, TypeScript predicts always:**
 
@@ -469,6 +477,140 @@ their constructor's, a mid-pack constant) regressed both log loss and top-1
 versus the real grid, so the panel shows "no grid yet" rather than a
 degraded prediction until qualifying has happened.
 
+## Evaluation harness
+
+The Monte Carlo model and the XGBoost overlay were previously measured
+differently (different backtest code paths, and 2024 reused across many
+tuning decisions above). `src/sim/evaluate.ts` (`npm run evaluate`) is the
+one shared, repeatable benchmark that scores both models — plus three
+reference baselines — on exactly the same races, the same way, so a future
+change to either model has an honest number to compare against.
+
+**Folds.** Test seasons are 2024, 2025, 2026 (completed races only). The
+Monte Carlo model runs with its current production params for every test
+season — it was tuned against these same seasons, which is a known bias in
+its favour, not a fold in the statistical sense. XGBoost gets a real
+forward-chaining fold: a separate model trained only on seasons strictly
+before the test season (`scripts/xgboost/train.py --train-until <season>
+--out scripts/xgboost/model/fold-<season>.json`), saved next to but never
+overwriting the production `model.json`. Both models read live features
+from the production DB the same way the app itself does
+(`buildSimContext`/`xgboost-features.ts`), so evaluation mirrors production.
+
+**Modes.** `real-grid` (the actual or quali-derived starting grid is known)
+and `pre-quali` (grid simulated, via `forceSimulatedGrid`). XGBoost has no
+pre-quali mode — `buildXgboostFeatures` needs a real grid (see that file's
+own doc comment) — so it's reported as n/a there, not excluded from scoring
+the models that do have an opinion.
+
+**Race set.** Only races every model actually active in a given mode
+managed to predict are scored, so no model gets an easier or harder subset
+than another. Excluded races are reported with a reason.
+
+**Baselines** (`evaluate.ts`): uniform (1/N), a grid-position baseline (win
+rate per starting slot, fit from `data/historical/*.csv` — 2007-2026 — since
+the live DB only has 2024-2026 ingested and a 2024 test season would
+otherwise have zero prior seasons to fit against), and a standings baseline
+(win probability proportional to points scored before that race). A
+uniform/tied baseline's ties are broken by `driverId`, not insertion order —
+an earlier version of this harness tie-broke by array order, which
+silently leaked real finishing order through a DB query's natural row order
+and made the "uninformed" baseline look artificially good. Worth knowing if
+extending this file: any tied-probability ranking needs an answer-independent
+tiebreak.
+
+**Metrics**, per model/mode/season and pooled: win log loss, Brier score,
+top-1/top-3 accuracy, Spearman rank correlation, and calibration buckets
+(same bands as `buildCalibration`). Monte Carlo is reported both raw and
+Platt-calibrated where calibration applies (real-grid only, per real-grid
+predictions only — see "How the simulation works" above).
+
+**Is a difference real?** A paired bootstrap (`pairedBootstrap`, 5,000
+resamples by default) over per-race log loss differences, races as the
+resampling unit (not drivers, since one race's per-driver predictions
+aren't independent draws). Reports a mean difference and 95% interval; if
+the interval includes 0, the harness calls it "not significant." At 14-24
+races per season, treat a single-season comparison as suggestive — the
+pooled 2024+2025+2026 comparison (63 races) is the one with enough data for
+the interval to mean much.
+
+```
+npm run evaluate                                          # default: 2024,2025,2026 x real-grid,pre-quali
+npm run evaluate -- --seasons=2025,2026 --modes=real-grid  # narrower run
+npm run evaluate -- --iterations=8000 --resamples=10000    # slower, tighter estimate
+```
+
+Prints a summary table plus the bootstrap comparisons, and saves the full
+result (every per-race prediction, params snapshot, git commit, resamples)
+to `eval-results/<date>-<short-commit-hash>.json` — a durable, committed
+baseline that a later run can be diffed against. Read-only: makes no DB
+writes and does not touch production params, calibration, or
+`scripts/xgboost/model/model.json`.
+
+`npm run evaluate:floor` sweeps a probability-floor experiment
+(`p' = (1-eps)*p + eps/N`) on both models' win probabilities — built,
+swept, **not adopted**: no eps value beat eps=0 with statistical
+significance on either model (Monte Carlo's holdout trend was promising but
+underpowered at n=15; XGBoost-raw actively regressed at its own
+tuning-picked eps on the 2026 holdout). `npm run evaluate:blend` is the
+sweep behind the "Blended prediction" section below.
+
+## Blended prediction
+
+The real-grid production prediction (the race page's main panel) is Monte
+Carlo blended with the XGBoost overlay's raw (pre-Platt) win probability:
+
+```
+blendWinPct = BLEND_ALPHA * mcWinPct + (1 - BLEND_ALPHA) * xgbRawWinPct
+```
+
+renormalized across the field, with `BLEND_ALPHA = 0.4` (src/sim/params.ts).
+This is the first model variant in this project to significantly beat the
+grid-position baseline in the evaluation harness (bootstrap mean diff
+-0.201, 95% CI [-0.396, -0.025], pooled 2024+2025+2026). It does not
+significantly beat either pure parent model individually at this race count
+(both CIs cross zero, n=63) — adopted as the best available point estimate,
+not a statistically proven win over MC or XGBoost alone.
+
+**Tuning** (`npm run evaluate:blend`, `src/sim/eval-blend-run.ts`): swept
+alpha 0.0-1.0 in steps of 0.1 on pooled 2024+2025 (N=48), picked by lowest
+log loss — a single-troughed curve (1.3527 at alpha=1.0/pure MC, down to
+1.2745 at alpha=0.4, back up toward alpha=0/pure XGBoost's 1.3232), not a
+boundary pick. Checked cold on the untouched 2026 holdout: 0.9756, beating
+pure MC's 1.361 and pure XGBoost-raw's ~1.05 by a wide margin, confirming
+the tuning-set pick generalizes.
+
+**Scope — real-grid only, degrades to pure Monte Carlo automatically:**
+pre-qualifying predictions (XGBoost has no pre-quali mode), a race before
+the XGBoost model is trained, or any race XGBoost's live features can't be
+built for, all fall back to pure Monte Carlo rather than erroring (see
+`run-simulation.ts`'s `freezeXgboostPrediction` and
+`src/queries/race-prediction.ts`'s `getBlendedPrediction`). The season
+projection (`src/sim/season.ts`) is unaffected — it simulates full seasons
+internally and has no XGBoost equivalent to blend with, so its
+race-by-race numbers stay pure Monte Carlo (labelled as such on the home
+page).
+
+**No Platt recalibration on the blend** — XGBoost's own Platt fit was found
+to make 2 of 3 seasons worse than its raw output (see "XGBoost overlay"
+above), and the blend's own tuning was measured against raw inputs on both
+sides, so recalibrating afterward would be scoring against a transform the
+tuning never saw.
+
+**Persistence — compute-on-read, no blended value stored:** each model's
+own frozen prediction is stored independently (`simulation_results` for
+Monte Carlo, `xgboost_predictions` for XGBoost — the latter gained a
+`raw_win_probability` column for this), and the blend is computed fresh
+from both at read time. This keeps each parent model's own number
+recoverable for the race page's "Model breakdown" section and the
+prediction-review page's side-by-side comparison, without a third stored
+value to keep in sync. A race's Monte Carlo run now automatically triggers
+an XGBoost prediction alongside it (when XGBoost can run at all) instead of
+requiring a separate click.
+
+Full sweep output, bootstrap comparisons, and raw-vs-calibrated XGBoost
+numbers: `eval-results/blend-sweep-output.log`.
+
 ## Development
 
 ```
@@ -478,6 +620,9 @@ npm run ingest          # pull latest race data
 npm run ratings         # recompute ratings from ingested data
 npm run backtest -- 2026 4000     # backtest a season at N iterations
 npm run calibrate                 # fit Platt-scaling on 2025+2026, validate cold on 2024
+npm run evaluate                  # shared MC-vs-XGBoost-vs-baselines benchmark (see "Evaluation harness" above)
+npm run evaluate:floor            # probability-floor experiment, not adopted (see "Evaluation harness" above)
+npm run evaluate:blend            # MC+XGBoost alpha sweep behind BLEND_ALPHA (see "Blended prediction" above)
 npm run db:generate                # generate a drizzle migration after a schema.ts change
 npm run db:migrate                 # apply pending migrations
 ```

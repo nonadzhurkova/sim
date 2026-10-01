@@ -1,4 +1,5 @@
 import { runAndStoreSimulation, streamSimulation } from "@/sim/run-simulation";
+import { blendLiveOutcome } from "@/queries/race-prediction";
 import { DEFAULT_ITERATIONS } from "@/sim/params";
 
 const MAX_ITERATIONS = 20000;
@@ -42,7 +43,8 @@ export async function POST(req: Request) {
   if (body.stream === false) {
     try {
       const result = await runAndStoreSimulation(raceId, iterations);
-      return Response.json(result);
+      const blend = await blendLiveOutcome(raceId, result.drivers, result.xgboostAvailable);
+      return Response.json({ ...result, isBlended: blend.isBlended, drivers: blend.drivers });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Simulation failed";
       return Response.json({ error: message }, { status: 500 });
@@ -65,6 +67,17 @@ export async function POST(req: Request) {
               (event.completed / event.total) * MIN_STREAM_DURATION_MS;
             const wait = targetElapsed - (Date.now() - startedAt);
             if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+            controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+            continue;
+          }
+          if (event.type === "done") {
+            // Blend only the final event -- progress snapshots stay pure MC
+            // (XGBoost hasn't run yet mid-stream, see freezeXgboostPrediction's
+            // own doc comment on why it only runs once, against the final result).
+            const blend = await blendLiveOutcome(raceId, event.result.drivers, event.result.xgboostAvailable);
+            const blended = { ...event, result: { ...event.result, isBlended: blend.isBlended, drivers: blend.drivers } };
+            controller.enqueue(encoder.encode(JSON.stringify(blended) + "\n"));
+            continue;
           }
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         }

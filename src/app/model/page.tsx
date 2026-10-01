@@ -1,8 +1,10 @@
-import { getLatestSeason } from "@/queries/races";
+import { getLatestSeason, getRaceByRoute } from "@/queries/races";
 import { getCurrentRace } from "@/queries/current-race";
 import { getYearOverYearComparison } from "@/queries/comparison";
 import { FreshnessBanner } from "@/components/freshness-banner";
 import { RatingsPanel } from "@/components/ratings-panel";
+import { PredictionPanel } from "@/components/prediction-panel";
+import { XgboostPredictionPanel } from "@/components/xgboost-prediction-panel";
 
 /**
  * Developer/model-internals page, split out from the fan-facing home page —
@@ -23,6 +25,7 @@ export default async function ModelPage({
 
   let targetSeason = season;
   let targetRound: number | null = null;
+  let targetRaceId: number | null = null;
   if (raceParam) {
     const [s, r] = raceParam.split("-").map((n) => parseInt(n, 10));
     if (Number.isInteger(s) && Number.isInteger(r)) {
@@ -33,6 +36,10 @@ export default async function ModelPage({
   if (targetRound == null) {
     const currentRace = await getCurrentRace(targetSeason);
     targetRound = currentRace?.round ?? null;
+    targetRaceId = currentRace?.id ?? null;
+  } else {
+    const race = await getRaceByRoute(targetSeason, targetRound);
+    targetRaceId = race?.id ?? null;
   }
 
   const comparison = targetRound != null ? await getYearOverYearComparison(targetSeason, targetRound) : null;
@@ -63,6 +70,22 @@ export default async function ModelPage({
         <p className="hud-mono mt-6 text-xs text-slate-400">
           NO RATINGS AVAILABLE YET FOR THIS RACE.
         </p>
+      )}
+
+      {targetRaceId != null && (
+        <div className="mt-8">
+          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+            {"//"} Parent models — {targetSeason} R{String(targetRound).padStart(2, "0")}
+          </p>
+          <p className="hud-mono mt-1 text-[11px] text-slate-400">
+            The production race page shows the blended prediction (BLEND_ALPHA in src/sim/params.ts). These are each
+            parent model&apos;s own standalone output, for diagnosing where they agree or disagree.
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <PredictionPanel raceId={targetRaceId} />
+            <XgboostPredictionPanel raceId={targetRaceId} />
+          </div>
+        </div>
       )}
     </main>
   );

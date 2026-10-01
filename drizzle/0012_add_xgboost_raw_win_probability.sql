@@ -1,0 +1,1 @@
+ALTER TABLE "xgboost_predictions" ADD COLUMN "raw_win_probability" real;

@@ -71,7 +71,7 @@ export type BacktestSummary = {
 };
 
 /** Probability floor so a 0% pick that wins doesn't score -log(0) = Infinity. */
-const LOG_LOSS_FLOOR = 1e-4;
+export const LOG_LOSS_FLOOR = 1e-4;
 
 type ScorableRace = {
   race: { id: number; season: number; round: number };

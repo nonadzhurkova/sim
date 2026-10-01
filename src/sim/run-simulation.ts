@@ -1,10 +1,12 @@
 import { db } from "@/db";
-import { simulationRuns, simulationResults, races } from "@/db/schema";
+import { simulationRuns, simulationResults, races, drivers, xgboostPredictions } from "@/db/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { buildSimContext } from "./entrants";
 import { runSimulation, simulationIterator, type SimulationOutcome } from "./engine";
 import { DEFAULT_ITERATIONS, WIN_PROBABILITY_CALIBRATION, MODEL_VERSION } from "./params";
 import { applyCalibration } from "./calibration";
+import { buildXgboostFeatures } from "./xgboost-features";
+import { predictRace, xgboostModelAvailable } from "./xgboost-model";
 
 /** How often (in iterations) partial results are flushed to the DB mid-run. */
 const PROGRESS_INTERVAL = 1000;
@@ -73,8 +75,71 @@ export type StoredSimulation = {
   completedAt: Date | null;
   hasRealGrid: boolean;
   gridIsProvisional: boolean;
+  /** True when the XGBoost overlay also produced (and froze) a prediction for this race, so a blend can be computed from it (see blendPrediction in src/queries/race-prediction.ts). False for pre-quali runs or when the XGBoost model/grid isn't available -- the stored result is pure Monte Carlo either way. */
+  xgboostAvailable: boolean;
   drivers: SimulationOutcome["drivers"];
 };
+
+/**
+ * Runs the XGBoost overlay for `raceId` (if it can predict this race at all)
+ * and freezes its prediction into xgboost_predictions, the same table and
+ * "replace this race's rows wholesale" semantics /api/xgboost-predict's
+ * manual trigger already uses (see that route's own doc comment) -- this
+ * just means every Monte Carlo run now also keeps XGBoost's frozen
+ * prediction up to date, instead of requiring a separate click.
+ *
+ * Does NOT blend or mutate the Monte Carlo outcome -- simulation_results
+ * keeps storing pure MC, by design (see the "compute-on-read" discussion in
+ * BLEND_ALPHA's doc comment): the production blend is computed at read time
+ * in src/queries/race-prediction.ts from the two independently frozen
+ * tables, so each model's own frozen number stays recoverable for the
+ * "model breakdown" UI without a third stored value to keep in sync.
+ *
+ * Returns false (does nothing else) whenever XGBoost can't predict this
+ * race: no trained model artifact (xgboostModelAvailable), no real/quali-
+ * derived grid yet (buildXgboostFeatures returns null -- XGBoost has no
+ * pre-quali proxy, see that file's own doc comment), or a pre-quali outcome
+ * (!outcome.hasRealGrid, checked first since it's free and covers the most
+ * common case).
+ */
+async function freezeXgboostPrediction(raceId: number, outcome: SimulationOutcome): Promise<boolean> {
+  if (!outcome.hasRealGrid) return false;
+  if (!xgboostModelAvailable()) return false;
+
+  const features = await buildXgboostFeatures(raceId);
+  if (!features) return false;
+
+  const driverRows = await db.select({ id: drivers.id, externalRef: drivers.externalRef }).from(drivers);
+  const driverIdByRef = new Map(driverRows.map((d) => [d.externalRef, d.id]));
+
+  const entrants = features
+    .map((f) => {
+      const driverId = driverIdByRef.get(f.driverRef);
+      if (driverId == null) return null;
+      return { driverId, ...f };
+    })
+    .filter((e): e is NonNullable<typeof e> => e != null);
+  if (entrants.length === 0) return false;
+
+  const predictions = predictRace(entrants);
+  if (predictions.length === 0) return false;
+
+  const predictedBeforeRace = await isBeforeRaceStart(raceId);
+  await db.delete(xgboostPredictions).where(eq(xgboostPredictions.raceId, raceId));
+  await db.insert(xgboostPredictions).values(
+    predictions.map((p) => ({
+      raceId,
+      driverId: p.driverId,
+      predFinishPosition: p.predFinishPosition,
+      predDnfProb: p.predDnfProb,
+      winProbability: p.winProbability,
+      rawWinProbability: p.rawWinProbability,
+      predictedBeforeRace,
+      modelVersion: MODEL_VERSION,
+    })),
+  );
+  return true;
+}
 
 /**
  * Runs a simulation for `raceId` and persists it.
@@ -128,6 +193,11 @@ export async function runAndStoreSimulation(
     });
 
     const calibrated = calibrateOutcome(outcome);
+    // XGBoost only runs once, against the final result -- its prediction is
+    // deterministic given the same live grid/features, so there's no reason
+    // to recompute it on every intermediate progress flush the way the
+    // Monte Carlo simulation itself does.
+    const xgboostAvailable = await freezeXgboostPrediction(raceId, calibrated);
     await lastFlush;
     await persistResults(run.id, calibrated);
     await db
@@ -144,6 +214,7 @@ export async function runAndStoreSimulation(
       completedAt: new Date(),
       hasRealGrid: calibrated.hasRealGrid,
       gridIsProvisional: calibrated.gridIsProvisional,
+      xgboostAvailable,
       drivers: calibrated.drivers,
     };
   } catch (err) {
@@ -221,6 +292,9 @@ export async function* streamSimulation(
       step = gen.next();
     }
     const calibrated = calibrateOutcome(step.value);
+    // Same as runAndStoreSimulation: XGBoost only runs once, against the
+    // final result, not on every intermediate progress snapshot.
+    const xgboostAvailable = await freezeXgboostPrediction(raceId, calibrated);
 
     await persistResults(run.id, calibrated);
     const completedAt = new Date();
@@ -240,6 +314,7 @@ export async function* streamSimulation(
         completedAt,
         hasRealGrid: calibrated.hasRealGrid,
         gridIsProvisional: calibrated.gridIsProvisional,
+        xgboostAvailable,
         drivers: calibrated.drivers,
       },
     };

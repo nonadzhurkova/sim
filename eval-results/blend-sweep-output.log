@@ -1,0 +1,74 @@
+
+> f1sym@0.1.0 evaluate:blend
+> tsx src/sim/eval-blend-run.ts --iterations=4000 --resamples=5000
+
+◇ injected env (1) from .env.local
+MC + XGBoost-raw blend sweep: alpha in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1], tuning on 2024+2025, checking on 2026.
+
+Loaded 2024: 24 shared races (75.1s)
+Loaded 2025: 24 shared races (76.7s)
+Loaded 2026: 15 shared races (48.3s)
+
+=== Alpha sweep, pooled 2024+2025 (tuning, N=48) ===
+  ALPHA   LOGLOSS  BRIER   TOP1%
+  0        1.3232  0.6199   54.2%
+  0.1      1.3021  0.6122   54.2%
+  0.2      1.2878  0.6074   58.3%
+  0.3      1.2787  0.6055   60.4%
+  0.4      1.2745  0.6065   54.2%
+  0.5      1.2749  0.6104   54.2%
+  0.6      1.2802  0.6172   52.1%
+  0.7      1.2911  0.6268   56.3%
+  0.8      1.3093  0.6394   56.3%
+  0.9      1.3290  0.6548   54.2%
+  1        1.3527  0.6731   50.0%
+
+Best alpha by pooled 2024+2025 log loss: 0.4
+
+=== 2026 holdout, best 3 alphas by tuning log loss ===
+  ALPHA   LOGLOSS  BRIER   TOP1%
+  0.4      0.9756  0.4894   73.3%
+  0.5      0.9690  0.4849   66.7%
+  0.3      0.9879  0.4964   73.3%
+
+=== Pooled (all seasons with fold models, N=63) ===
+  MODEL              LOGLOSS  BRIER   TOP1%   TOP3%
+  blend (alpha=0.4)   1.2033  0.5787   58.7%   92.1%
+  pure monte-carlo    1.3546  0.6316   54.0%   92.1%
+  pure xgboost-raw    1.2604  0.5989   54.0%   92.1%
+  grid-baseline       1.4041  0.6204   58.7%   90.5%
+
+=== BOOTSTRAP (5000 resamples) -- best blend (alpha=0.4) vs each ===
+  blend vs pure monte-carlo: mean diff = -0.1512, 95% CI [-0.4177, 0.0339] (n=63) -- not significant
+  blend vs pure xgboost-raw: mean diff = -0.0570, 95% CI [-0.1276, 0.0159] (n=63) -- not significant
+  blend vs grid-baseline: mean diff = -0.2008, 95% CI [-0.3957, -0.0252] (n=63) -- blend significantly better
+
+=== Calibration buckets, best blend (alpha=0.4) ===
+  BAND        PREDICTED  ACTUAL   COUNT
+  0-2%            0.1%     0.1%   1004
+  2-5%            3.4%     4.4%     68
+  5-10%           6.9%     8.3%     48
+  10-20%         14.9%    11.9%     59
+  20-35%         27.2%    19.5%     41
+  35-60%         46.6%    56.5%     46
+  60-100%        69.3%    66.7%     21
+
+=== Worst 3 races by log loss ===
+  blend (alpha=0.4):
+    2024 R21 (raceId 21): winner=driver#1 grid=17 p(win)=0.0004 logLoss=7.918
+    2024 R6 (raceId 6): winner=driver#6 grid=5 p(win)=0.0277 logLoss=3.585
+    2024 R19 (raceId 19): winner=driver#4 grid=4 p(win)=0.0411 logLoss=3.193
+  pure monte-carlo:
+    2024 R21 (raceId 21): winner=driver#1 grid=17 p(win)=0.0000 logLoss=9.210
+    2026 R13 (raceId 61): winner=driver#962 grid=19 p(win)=0.0000 logLoss=9.210
+    2025 R23 (raceId 47): winner=driver#1 grid=3 p(win)=0.0285 logLoss=3.558
+  pure xgboost-raw:
+    2024 R21 (raceId 21): winner=driver#1 grid=17 p(win)=0.0006 logLoss=7.407
+    2024 R6 (raceId 6): winner=driver#6 grid=5 p(win)=0.0202 logLoss=3.900
+    2024 R19 (raceId 19): winner=driver#4 grid=4 p(win)=0.0366 logLoss=3.308
+
+=== MC vs XGBoost-raw strong disagreements (one >40%, other <10%, same race) ===
+  2024 R? (raceId 5) driver#6: MC=44.4% XGB=5.2% 
+  2024 R? (raceId 14) driver#7: MC=8.5% XGB=45.6% (WON)
+  2024 R? (raceId 22) driver#6: MC=45.1% XGB=2.2% 
+  2025 R? (raceId 34) driver#8: MC=1.8% XGB=44.2% 

@@ -17,7 +17,7 @@
  * frozen pre-race prediction can be told apart from one made under
  * different model settings, without having to diff params.ts by date.
  */
-export const MODEL_VERSION = "2026-09-29-prequali-noise";
+export const MODEL_VERSION = "2026-10-01-mc-xgboost-blend";
 
 /**
  * Relative weight of each pace signal when composing a driver's expected
@@ -105,6 +105,36 @@ export const PACE_UNCERTAINTY_WEIGHT = 0;
  * values are the train-on-[2025,2026]/validate-on-2024 fit as-is.
  */
 export const WIN_PROBABILITY_CALIBRATION = { a: 0.7697, b: -0.2061 };
+
+/**
+ * Weight on Monte Carlo's win probability when blending with the XGBoost
+ * overlay's raw (pre-Platt) win probability for the production real-grid
+ * prediction: blendWinPct = BLEND_ALPHA * mcWinPct + (1 - BLEND_ALPHA) *
+ * xgbRawWinPct, renormalized across the field. Only applied when both
+ * models can predict the race (a real or quali-derived grid exists AND
+ * scripts/xgboost/train.py has been run) -- see run-simulation.ts's
+ * blendWithXgboost. Falls back to pure Monte Carlo otherwise, including
+ * every pre-qualifying prediction (XGBoost has no pre-quali mode) and the
+ * season/championship projection (season.ts never calls XGBoost at all).
+ *
+ * Tuned with `npm run evaluate:blend` (src/sim/eval-blend-run.ts): swept
+ * 0.0-1.0 in steps of 0.1 on pooled 2024+2025 (N=48), picked by lowest log
+ * loss (1.3527 at alpha=1.0/pure MC down to 1.2745 at alpha=0.4, rising
+ * again toward alpha=0/pure XGBoost's 1.3232 -- a single-troughed curve,
+ * not a boundary pick), then checked cold on the untouched 2026 holdout
+ * (0.9756, beating pure MC's 1.361 and pure XGBoost-raw's ~1.05 by a wide
+ * margin -- confirms the tuning-set pick generalizes, not an artifact of
+ * overfitting the sweep). Pooled across all three seasons the blend beats
+ * the grid-position baseline significantly (bootstrap mean diff -0.201,
+ * 95% CI [-0.396, -0.025]) -- the first model variant in this project to
+ * do so. Does not significantly beat pure MC or pure XGBoost-raw
+ * individually (both CIs cross zero at n=63), so this is adopted as the
+ * best available point estimate, not a statistically proven win over
+ * either parent model alone. No Platt recalibration is applied to the
+ * blend itself -- see run-simulation.ts's blendWithXgboost doc comment for
+ * why raw inputs are already well-calibrated enough here.
+ */
+export const BLEND_ALPHA = 0.4;
 
 /**
  * Per-lap pace noise (seconds, std dev) applied per driver per iteration.

@@ -103,7 +103,10 @@ via `getTeamColor()` — is as documented in the first pass and hasn't changed.
 **Race detail (`/race/[season]/[round]`)** — reordered so the prediction leads, not buried at position 7:
 1. Header row: `RaceHeader` (prev/next arrows) + three buttons (Prediction Review, Telemetry Analysis, Model
    Ratings)
-2. `PredictionTabs` — Monte Carlo ("Main Model") and XGBoost ("Experimental") as tabs, not stacked panels
+2. `RacePredictionPanel` — one blended prediction (Monte Carlo + XGBoost, `BLEND_ALPHA` in `src/sim/params.ts`),
+   not tabs between two models. A collapsed "Model breakdown" section shows each parent model's own number
+   side by side. Falls back to pure Monte Carlo automatically (titled "Race Prediction (pre-qualifying)") when
+   there's no grid yet or XGBoost can't predict the race.
 3. `SessionSchedulePanel`
 4. "// This weekend" — session pace tables
 5. `CarPerformancePanel`
@@ -114,7 +117,9 @@ via `getTeamColor()` — is as documented in the first pass and hasn't changed.
 `RatingsPanel` no longer appears here — moved to `/model`.
 
 **`/model`** *(new)*: `FreshnessBanner` (+ its `ImportButton`), then `RatingsPanel` for a chosen race (defaults to
-current/next, or `?race=season-round`).
+current/next, or `?race=season-round`), then a "Parent models" section with the standalone `PredictionPanel`
+(Monte Carlo) and `XgboostPredictionPanel` — each parent model's own diagnostic output, now that the race page's
+main panel shows the blend rather than either one alone.
 
 **`/races`** *(new)*: title + `SeasonPicker`, then `RaceList` — the same calendar component the home page uses.
 

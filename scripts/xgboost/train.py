@@ -8,8 +8,21 @@ Run this once (or whenever data/historical/ is refreshed with a newer
 snapshot) -- NOT per prediction. Saves the trained artifacts to
 scripts/xgboost/model/ for score.py to load and reuse without retraining.
 
-Usage: python scripts/xgboost/train.py
+Usage: python scripts/xgboost/train.py [--train-until YEAR] [--out PATH]
+
+--train-until YEAR restricts training to seasons strictly before YEAR (a
+forward-chaining fold for src/sim/evaluate.ts's backtest harness -- e.g.
+--train-until 2025 trains on 2014-2024 only, so a fold model never sees the
+season it's later evaluated against). Omitted, training uses the full
+2014-2026 range exactly as before -- this flag is additive, not a behavior
+change for the default (no-args) invocation that produces the production
+model.json.
+
+--out PATH writes the trained artifacts to PATH instead of
+scripts/xgboost/model/model.json -- so a fold model (e.g.
+scripts/xgboost/model/fold-2025.json) never overwrites the production file.
 """
+import argparse
 import json
 import sys
 import numpy as np
@@ -72,10 +85,33 @@ def base_score_of(model) -> float:
 
 
 def main():
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train-until",
+        type=int,
+        default=None,
+        help="Restrict training to seasons strictly before this year (a forward-chaining fold; omit for the full 2014-2026 range).",
+    )
+    parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Output path for the trained model (defaults to scripts/xgboost/model/model.json).",
+    )
+    args = parser.parse_args()
 
-    print("Building feature table from data/historical/ (2014-2026)...")
-    df = build_feature_table()
+    out_path = Path(args.out) if args.out else MODEL_DIR / "model.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.train_until is not None:
+        # max_year is inclusive in build_feature_table, so "strictly before
+        # train_until" means max_year = train_until - 1.
+        max_year = args.train_until - 1
+        print(f"Building feature table from data/historical/ (2014-{max_year}, fold: train-until {args.train_until})...")
+        df = build_feature_table(max_year=max_year)
+    else:
+        print("Building feature table from data/historical/ (2014-2026)...")
+        df = build_feature_table()
     era_dummies = pd.get_dummies(df["era"], prefix="era")
     all_features = FEATURES + list(era_dummies.columns)
     df = pd.concat([df, era_dummies], axis=1)
@@ -130,8 +166,8 @@ def main():
             "trees": export_trees(clf.get_booster()),
         },
     }
-    (MODEL_DIR / "model.json").write_text(json.dumps(model_payload))
-    print(f"\nSaved trained model + calibration to {MODEL_DIR / 'model.json'}")
+    out_path.write_text(json.dumps(model_payload))
+    print(f"\nSaved trained model + calibration to {out_path}")
 
 
 if __name__ == "__main__":

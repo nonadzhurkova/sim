@@ -70,10 +70,11 @@ function DriverLine({ row, accent }: { row: PredictionReviewRow; accent?: boolea
 }
 
 export function PredictionReviewTable({ review }: { review: PredictionReview }) {
-  const { rows, favourite, actualWinner, winnerPredictedRank, podiumHits, meanAbsRankError, logLoss, isFrozen, modelVersion, xgboost } =
+  const { rows, favourite, actualWinner, winnerPredictedRank, podiumHits, meanAbsRankError, logLoss, isFrozen, modelVersion, xgboost, blended } =
     review;
 
   const xgboostByDriver = new Map((xgboost?.rows ?? []).map((r) => [r.driverId, r]));
+  const blendedByDriver = new Map((blended?.rows ?? []).map((r) => [r.driverId, r]));
 
   // Ordered by what actually happened, not by either model's prediction —
   // reading the table top to bottom should match reading the race result
@@ -171,6 +172,22 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
         </div>
       )}
 
+      {blended && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatTile
+            label="Blended Pick (production)"
+            value={blended.favourite?.driverName ?? "—"}
+            sub={blended.favourite ? `${pct(blended.favourite.winProbability)}% win chance` : undefined}
+          />
+          <StatTile
+            label="Blended Winner Rank"
+            value={blended.winnerPredictedRank != null ? `#${blended.winnerPredictedRank}` : "—"}
+          />
+          <StatTile label="Blended Podium Hits" value={`${blended.podiumHits}/3`} />
+          <StatTile label="Blended Log Loss" value={blended.logLoss != null ? blended.logLoss.toFixed(3) : "—"} />
+        </div>
+      )}
+
       {xgboost && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile
@@ -187,25 +204,33 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
         </div>
       )}
 
-      <HudPanel title={xgboost ? "Full field — race result vs. Monte Carlo vs. XGBoost" : "Full field — race result vs. predicted"}>
-        {xgboost && (
-          <p className="hud-mono text-[10px] uppercase tracking-widest text-amber-500">
-            XGBoost is an experimental second opinion — not blended into the production prediction.
+      <HudPanel title={blended ? "Full field — race result vs. Blended vs. Monte Carlo vs. XGBoost" : "Full field — race result vs. predicted"}>
+        {blended && (
+          <p className="hud-mono text-[10px] uppercase tracking-widest text-cyan-500">
+            Blended is the production prediction (BLEND_ALPHA in params.ts). Monte Carlo and XGBoost below are each
+            parent model&apos;s own standalone call.
           </p>
         )}
         <p className="hud-mono mt-1 text-[10px] uppercase tracking-widest text-slate-600">
-          Ordered by what actually happened, not by either model&apos;s prediction.{" "}
+          Ordered by what actually happened, not by any model&apos;s prediction.{" "}
           <span className="text-emerald-300 font-semibold">bright green</span> = exact position ·{" "}
           <span className="text-emerald-500 font-semibold">green</span> = within 2 places ·{" "}
           <span className="text-amber-400 font-semibold">amber</span> = 3-4 places off ·{" "}
           <span className="text-red-400 font-semibold">red</span> = 5 or more places off
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-xs">
+          <table className="w-full min-w-[900px] text-xs">
             <thead>
               <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
                 <th className="py-1.5 pr-3 font-medium">Actual</th>
                 <th className="py-1.5 pr-3 font-medium">Driver</th>
+                {blended && (
+                  <>
+                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Blend #</th>
+                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Blend Win%</th>
+                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Closer</th>
+                  </>
+                )}
                 <th className="py-1.5 pr-3 font-medium text-right">MC #</th>
                 <th className="py-1.5 pr-3 font-medium text-right">MC Win%</th>
                 <th className="py-1.5 pr-3 font-medium text-right">MC Finish</th>
@@ -222,10 +247,13 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
             <tbody>
               {rowsByActualFinish.map((r) => {
                 const xr = xgboostByDriver.get(r.driverId);
+                const br = blendedByDriver.get(r.driverId);
                 const mcCall = accuracyCall(r.predictedRank, r.actualFinish);
                 const mcColor = accuracyCallColor(mcCall);
                 const xgbCall = xr ? accuracyCall(xr.predictedRank, r.actualFinish) : null;
                 const xgbColor = xr ? accuracyCallColor(xgbCall) : "text-slate-600";
+                const blendCall = br ? accuracyCall(br.predictedRank, r.actualFinish) : null;
+                const blendColor = br ? accuracyCallColor(blendCall) : "text-slate-600";
                 return (
                   <tr key={r.driverId} className="border-t border-slate-800/60">
                     <td className="hud-mono py-1.5 pr-3 text-slate-300">
@@ -234,6 +262,19 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
                     <td className="py-1.5 pr-3">
                       <DriverLine row={r} accent={r.driverId === actualWinner?.driverId} />
                     </td>
+                    {blended && (
+                      <>
+                        <td className={`hud-mono py-1.5 pr-3 text-right font-semibold ${blendColor}`}>
+                          {br ? br.predictedRank : "—"}
+                        </td>
+                        <td className={`hud-mono py-1.5 pr-3 text-right ${blendColor}`}>
+                          {br ? `${pct(br.winProbability)}%` : "—"}
+                        </td>
+                        <td className="hud-mono py-1.5 pr-3 text-right text-[10px] uppercase tracking-wider text-slate-500">
+                          {br?.closerModel === "monte-carlo" ? "MC" : br?.closerModel === "xgboost" ? "XGB" : br?.closerModel === "tie" ? "tie" : "—"}
+                        </td>
+                      </>
+                    )}
                     <td className={`hud-mono py-1.5 pr-3 text-right font-semibold ${mcColor}`}>{r.predictedRank}</td>
                     <td className={`hud-mono py-1.5 pr-3 text-right ${mcColor}`}>{pct(r.winProbability)}%</td>
                     <td className={`hud-mono py-1.5 pr-3 text-right ${mcColor}`}>
@@ -262,10 +303,12 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
           </table>
         </div>
         <p className="hud-mono mt-3 text-[10px] leading-relaxed text-slate-600">
-          MC = MONTE CARLO (PRODUCTION). XGB = XGBOOST OVERLAY (EXPERIMENTAL). MISS = ACTUAL FINISH − MC PREDICTED
-          RANK. NEGATIVE MEANS THE MODEL RATED THEM TOO LOW (THEY FINISHED BETTER THAN EXPECTED); POSITIVE MEANS TOO
-          HIGH. DNF/DSQ DRIVERS HAVE NO MISS VALUE — THERE&apos;S NO MEANINGFUL &quot;PREDICTED FINISH&quot; TO
-          COMPARE A RETIREMENT AGAINST.
+          BLEND = PRODUCTION PREDICTION (MONTE CARLO + XGBOOST, SEE BLEND_ALPHA IN SRC/SIM/PARAMS.TS). MC = MONTE
+          CARLO (PARENT MODEL). XGB = XGBOOST OVERLAY (PARENT MODEL). CLOSER = WHICH PARENT MODEL&apos;S RANK WAS
+          NEARER THE ACTUAL FINISH FOR THAT DRIVER. MISS = ACTUAL FINISH − MC PREDICTED RANK. NEGATIVE MEANS THE
+          MODEL RATED THEM TOO LOW (THEY FINISHED BETTER THAN EXPECTED); POSITIVE MEANS TOO HIGH. DNF/DSQ DRIVERS
+          HAVE NO MISS VALUE — THERE&apos;S NO MEANINGFUL &quot;PREDICTED FINISH&quot; TO COMPARE A RETIREMENT
+          AGAINST.
         </p>
       </HudPanel>
     </div>

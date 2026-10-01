@@ -6,6 +6,7 @@ import { runSimulation } from "@/sim/engine";
 import { calibrateOutcome, getFrozenPrediction } from "@/sim/run-simulation";
 import { buildXgboostFeatures } from "@/sim/xgboost-features";
 import { predictRace, xgboostModelAvailable } from "@/sim/xgboost-model";
+import { BLEND_ALPHA } from "@/sim/params";
 
 // Lower than PredictionPanel's default (8000): this runs synchronously on
 // every page load rather than being a user-triggered, streamed action, so it
@@ -24,6 +25,8 @@ export type PredictionReviewRow = {
   actualStatus: "finished" | "dnf" | "dsq" | null;
   /** actualFinish - predictedRank; negative = model rated them too low (finished better than expected). */
   rankError: number | null;
+  /** Pre-Platt-calibration win probability. Only set on xgboost review rows -- what the production blend (BLEND_ALPHA) actually uses, since XGBoost's own Platt fit was dropped (see README). */
+  rawWinProbability?: number;
 };
 
 export type PredictionReview = {
@@ -56,6 +59,22 @@ export type PredictionReview = {
    */
   xgboost: {
     rows: PredictionReviewRow[];
+    favourite: PredictionReviewRow | null;
+    winnerPredictedRank: number | null;
+    podiumHits: number;
+    logLoss: number | null;
+  } | null;
+  /**
+   * The production prediction (BLEND_ALPHA*mc + (1-BLEND_ALPHA)*xgbRaw,
+   * renormalized) scored the same way as the two parent models above. Null
+   * when xgboost is null (no frozen/live XGBoost prediction for this race)
+   * -- there's nothing to blend, and the production prediction for this race
+   * actually was pure Monte Carlo (see run-simulation.ts's
+   * freezeXgboostPrediction), so showing a reconstructed blend here would be
+   * showing something that was never actually served.
+   */
+  blended: {
+    rows: (PredictionReviewRow & { closerModel: "monte-carlo" | "xgboost" | "tie" | null })[];
     favourite: PredictionReviewRow | null;
     winnerPredictedRank: number | null;
     podiumHits: number;
@@ -109,7 +128,7 @@ async function buildXgboostReview(
 
   const frozen = await getFrozenXgboostPrediction(raceId);
 
-  let predictions: { driverId: number; predFinishPosition: number; predDnfProb: number; winProbability: number }[];
+  let predictions: { driverId: number; predFinishPosition: number; predDnfProb: number; winProbability: number; rawWinProbability: number }[];
 
   if (frozen) {
     predictions = frozen.map((r) => ({
@@ -117,6 +136,11 @@ async function buildXgboostReview(
       predFinishPosition: r.predFinishPosition ?? 0,
       predDnfProb: r.predDnfProb ?? 0,
       winProbability: r.winProbability ?? 0,
+      // Rows written before the raw_win_probability column existed fall
+      // back to the calibrated value -- not exactly right, but strictly
+      // better than null for a blend that would otherwise silently exclude
+      // this driver.
+      rawWinProbability: r.rawWinProbability ?? r.winProbability ?? 0,
     }));
   } else {
     if (!xgboostModelAvailable()) return null;
@@ -154,6 +178,7 @@ async function buildXgboostReview(
       actualFinish,
       actualStatus: actual?.status ?? null,
       rankError: actualFinish != null ? actualFinish - predictedRank : null,
+      rawWinProbability: p.rawWinProbability,
     };
   });
 
@@ -305,6 +330,7 @@ export async function buildPredictionReview(
   const logLoss = winnerProb != null ? -Math.log(Math.max(winnerProb, LOG_LOSS_FLOOR)) : null;
 
   const xgboost = await buildXgboostReview(raceId, actualByDriver, winnerRow, actualPodiumIds);
+  const blended = buildBlendedReview(rows, xgboost, actualByDriver, winnerRow, actualPodiumIds);
 
   return {
     raceId,
@@ -320,5 +346,82 @@ export async function buildPredictionReview(
     isFrozen,
     modelVersion,
     xgboost,
+    blended,
+  };
+}
+
+/**
+ * Builds the blended review block from the already-scored MC and XGBoost
+ * rows -- same BLEND_ALPHA formula as the production prediction (see
+ * run-simulation.ts/race-prediction.ts), applied here for review purposes
+ * only, not stored anywhere. Null when xgboost review rows don't exist (see
+ * the `blended` field's own doc comment on PredictionReview for why that's
+ * the honest answer, not a reconstruction).
+ */
+function buildBlendedReview(
+  mcRows: PredictionReviewRow[],
+  xgboost: PredictionReview["xgboost"],
+  actualByDriver: Map<number, { finishPosition: number | null; status: "finished" | "dnf" | "dsq" | null }>,
+  winnerRow: { driverId: number } | undefined,
+  actualPodiumIds: Set<number>,
+): PredictionReview["blended"] {
+  if (!xgboost) return null;
+  const xgbByDriver = new Map(xgboost.rows.map((r) => [r.driverId, r]));
+
+  const raw = mcRows.map((r) => {
+    const xgbRow = xgbByDriver.get(r.driverId);
+    const xgbRaw = xgbRow?.rawWinProbability;
+    return xgbRaw != null ? BLEND_ALPHA * r.winProbability + (1 - BLEND_ALPHA) * xgbRaw : r.winProbability;
+  });
+  const sum = raw.reduce((a, b) => a + b, 0);
+
+  const ranked = mcRows
+    .map((r, i) => ({ driverId: r.driverId, winProbability: sum > 0 ? raw[i] / sum : r.winProbability }))
+    .sort((a, b) => b.winProbability - a.winProbability);
+
+  const rows = ranked.map((r, i) => {
+    const mcRow = mcRows.find((m) => m.driverId === r.driverId)!;
+    const xgbRow = xgbByDriver.get(r.driverId);
+    const actual = actualByDriver.get(r.driverId);
+    const predictedRank = i + 1;
+    const actualFinish = actual?.status === "finished" ? actual.finishPosition : null;
+
+    // Which parent model's own rank was closer to the actual finish, for
+    // this driver -- lets a viewer see whether the blend is actually
+    // drawing on both models or just tracking whichever one happened to be
+    // closer, race to race.
+    let closerModel: "monte-carlo" | "xgboost" | "tie" | null = null;
+    if (actualFinish != null && xgbRow) {
+      const mcAbsError = Math.abs(actualFinish - mcRow.predictedRank);
+      const xgbAbsError = Math.abs(actualFinish - xgbRow.predictedRank);
+      closerModel = mcAbsError < xgbAbsError ? "monte-carlo" : xgbAbsError < mcAbsError ? "xgboost" : "tie";
+    }
+
+    return {
+      driverId: r.driverId,
+      driverName: mcRow.driverName,
+      teamName: mcRow.teamName,
+      predictedRank,
+      winProbability: r.winProbability,
+      predictedFinish: null, // the blend has no equivalent of its own -- avgFinishPosition/predFinishPosition come from each parent model, not something a win-probability blend produces
+      actualFinish,
+      actualStatus: actual?.status ?? null,
+      rankError: actualFinish != null ? actualFinish - predictedRank : null,
+      closerModel,
+    };
+  });
+
+  const favourite = rows.find((r) => r.predictedRank === 1) ?? null;
+  const winnerRowBlend = winnerRow ? rows.find((r) => r.driverId === winnerRow.driverId) ?? null : null;
+  const podiumHits = rows.filter((r) => r.predictedRank <= 3 && actualPodiumIds.has(r.driverId)).length;
+  const winnerProb = winnerRowBlend?.winProbability ?? null;
+  const logLoss = winnerProb != null ? -Math.log(Math.max(winnerProb, LOG_LOSS_FLOOR)) : null;
+
+  return {
+    rows,
+    favourite,
+    winnerPredictedRank: winnerRowBlend?.predictedRank ?? null,
+    podiumHits,
+    logLoss,
   };
 }

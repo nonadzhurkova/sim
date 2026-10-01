@@ -151,6 +151,11 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
 
   return (
     <HudPanel title="Race-by-Race Predictions">
+      <p className="hud-mono mb-3 text-[10px] leading-relaxed text-slate-600">
+        MONTE CARLO ONLY — THE SEASON PROJECTION SIMULATES EVERY REMAINING RACE IN SEQUENCE AND
+        HAS NO XGBOOST EQUIVALENT, SO THESE NUMBERS ARE DISTINCT FROM THE BLENDED SINGLE-RACE
+        PREDICTION ON EACH RACE&apos;S OWN PAGE.
+      </p>
       {noRealGridYet && (
         <p className="hud-mono mb-3 text-[10px] leading-relaxed text-slate-600">
           NONE OF THESE RACES HAVE A REAL GRID YET, SO ODDS ARE SEEDED FROM SEASON-LONG PACE
