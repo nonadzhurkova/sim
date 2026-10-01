@@ -242,7 +242,7 @@ export function SectorBars({
   const maxAbs = Math.max(...sectors.map((s) => Math.abs(s.delta)), 0.05);
 
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
       {sectors.map((s) => {
         const isLoss = s.delta > 0;
         const height = (Math.abs(s.delta) / maxAbs) * 100;

@@ -16,11 +16,11 @@ export async function NavBar() {
 
   return (
     <header className="border-b border-cyan-900/60 bg-[#05070a]/90 backdrop-blur">
-      <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-3 lg:px-10">
+      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-y-2 px-6 py-3 lg:px-10">
         <Link href="/" className="hud-mono text-sm font-bold tracking-widest text-cyan-400">
           F1// PREDICTOR
         </Link>
-        <nav className="flex items-center gap-4 text-xs uppercase tracking-wider text-slate-400">
+        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs uppercase tracking-wider text-slate-400">
           <NavLinks />
           {currentRace && (
             <Link

@@ -347,7 +347,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                   <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
                     {"//"} Field ideal lap
                   </p>
-                  <div className="mt-3 grid grid-cols-3 gap-3">
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {session.idealLap.map((s) => (
                       <div
                         key={s.sector}

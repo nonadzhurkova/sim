@@ -54,27 +54,37 @@ export default async function RacePage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <RaceHeader race={race} adjacentRaces={adjacentRaces} />
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/race/${season}/${round}/prediction-review`}
-            className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
-          >
-            Prediction Review →
-          </Link>
-          <Link
-            href={`/race/${season}/${round}/analysis`}
-            className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
-          >
-            Telemetry Analysis →
-          </Link>
-          <Link
-            href={`/model?race=${season}-${round}`}
-            className="hud-mono border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
-          >
-            Model Ratings →
-          </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Each of these three leads to a page that has nothing to show
+              until its own prerequisite exists -- hidden rather than shown
+              as a dead end, same "don't link to an empty page" judgment the
+              rest of the app already makes (e.g. NextRaceCard's empty state). */}
+          {isFinished && (
+            <Link
+              href={`/race/${season}/${round}/prediction-review`}
+              className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
+            >
+              Prediction Review →
+            </Link>
+          )}
+          {hasPracticeData && (
+            <Link
+              href={`/race/${season}/${round}/analysis`}
+              className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
+            >
+              Telemetry Analysis →
+            </Link>
+          )}
+          {comparison && (
+            <Link
+              href={`/model?race=${season}-${round}`}
+              className="hud-mono border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+            >
+              Model Ratings →
+            </Link>
+          )}
         </div>
       </div>
 

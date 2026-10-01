@@ -62,28 +62,30 @@ function StintDetail({ raceId, driverId }: { raceId: number; driverId: number })
     return <p className="hud-mono py-2 text-[11px] text-slate-400">NO STINT DATA</p>;
 
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
-          <th className="py-1 pr-3 font-medium">Session</th>
-          <th className="py-1 pr-3 font-medium">Compound</th>
-          <th className="py-1 pr-3 font-medium text-right">Laps</th>
-          <th className="py-1 pr-3 font-medium text-right">Avg</th>
-          <th className="py-1 font-medium text-right">Best</th>
-        </tr>
-      </thead>
-      <tbody>
-        {stints.map((s, i) => (
-          <tr key={i} className="border-t border-slate-800/60">
-            <td className="hud-mono py-1 pr-3 text-slate-400">{SESSION_LABELS[s.sessionType]}</td>
-            <td className="hud-mono py-1 pr-3 text-slate-300">{s.compound}</td>
-            <td className="hud-mono py-1 pr-3 text-right text-slate-400">{s.lapCount}</td>
-            <td className="hud-mono py-1 pr-3 text-right text-slate-300">{formatLapTime(s.avgLapTime)}</td>
-            <td className="hud-mono py-1 text-right text-cyan-300">{formatLapTime(s.bestLapTime)}</td>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[420px] text-xs">
+        <thead>
+          <tr className="hud-mono text-left text-[10px] uppercase tracking-wider text-slate-400">
+            <th className="py-1 pr-3 font-medium">Session</th>
+            <th className="py-1 pr-3 font-medium">Compound</th>
+            <th className="py-1 pr-3 font-medium text-right">Laps</th>
+            <th className="py-1 pr-3 font-medium text-right">Avg</th>
+            <th className="py-1 font-medium text-right">Best</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {stints.map((s, i) => (
+            <tr key={i} className="border-t border-slate-800/60">
+              <td className="hud-mono py-1 pr-3 text-slate-400">{SESSION_LABELS[s.sessionType]}</td>
+              <td className="hud-mono py-1 pr-3 text-slate-300">{s.compound}</td>
+              <td className="hud-mono py-1 pr-3 text-right text-slate-400">{s.lapCount}</td>
+              <td className="hud-mono py-1 pr-3 text-right text-slate-300">{formatLapTime(s.avgLapTime)}</td>
+              <td className="hud-mono py-1 text-right text-cyan-300">{formatLapTime(s.bestLapTime)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
