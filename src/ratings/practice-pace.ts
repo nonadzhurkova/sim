@@ -46,6 +46,43 @@ const FIELD_TOO_FAST_THRESHOLD = 0.9;
 const RACE_SIM_RUN_LENGTH = 4; // consecutive similar-pace laps treated as a long run, not one-lap pace
 const RACE_SIM_TOLERANCE = 0.015; // 1.5% lap-to-lap variance counts as "similar pace"
 const RACE_SIM_MIN_SLOWDOWN = 1.03; // a cluster must be >=3% slower than the driver's best lap to count as a "run"
+/**
+ * Long-run detection for race-pace projection only (computeRacePaceProjection /
+ * computeSessionRaceSimRelativePace) -- separate from RACE_SIM_* above, which
+ * stay untouched because they gate what counts as a lap to *discard* from the
+ * already-validated qualifying-pace signal.
+ *
+ * RACE_SIM_TOLERANCE/MIN_SLOWDOWN anchor to the laps *within the stint being
+ * tested*: a flat, low-degradation long run never drifts 3% from its own
+ * stint-best, so it was never detected as a "run" at all, and a genuinely
+ * degrading run only has its slowest tail caught by the 1.5% window. Checked
+ * against real FP1-3 data from 8 recent races (2026 rounds 6-15): the
+ * current detector fired on 1.9% of stints with >=4 laps; top-3 finishers at
+ * the most recent race had zero long runs found anywhere across FP1-3.
+ *
+ * This detector anchors to the driver's best lap across their *whole
+ * session* (all stints/compounds) instead -- a genuine long run sits a few
+ * seconds off a driver's one-lap pace, not off its own stint's internal
+ * best, and that gap varies a lot by circuit (seen live: 1:37 vs 1:44.7, a
+ * 7.7s gap, on top of the dataset above). RACE_SIM_LONG_RUN_MIN_GAP is
+ * therefore a floor, not a band -- no upper cap, since a fixed ceiling would
+ * just reintroduce the same circuit-blindness. Internal spread is capped
+ * instead, so a handful of randomly slow traffic laps don't get swept in
+ * with a real run: real degradation is a smooth drift, not noise.
+ *
+ * Recovered long runs in 27.4% of the same 8-race stint sample (vs 1.9%),
+ * and the recovered examples passed an eyeball check against raw lap times.
+ * Backtested via weightOverrides on racePaceProjection (see PACE_WEIGHTS):
+ * now that this signal actually fires, 2024/2025 log loss get monotonically
+ * worse as its weight rises while 2026 gets monotonically better -- the same
+ * opposite-direction-curves shape as the rejected Bayesian ensemble blend.
+ * Weight intentionally left at its prior value pending further investigation
+ * rather than resolved by this change; the detector fix stands on its own
+ * (correct long-run detection, better getDriverStintBreakdown data) even
+ * though the weight question is still open.
+ */
+const RACE_SIM_LONG_RUN_MIN_GAP = 1.5; // seconds a lap must be off the driver's session-best to count toward a long run
+const RACE_SIM_LONG_RUN_MAX_SPREAD = 3.5; // seconds; max-min within a candidate window, so traffic/noise isn't mistaken for a smooth degradation run
 
 /**
  * Practice pace per driver for one race weekend, using FP1-3 sessions that
@@ -160,6 +197,37 @@ function excludeRaceSimLaps(sortedLapDurations: number[]): number[] {
 function extractRaceSimLaps(sortedLapDurations: number[]): number[] {
   const isSimLap = findRaceSimLapFlags(sortedLapDurations);
   return sortedLapDurations.filter((_, i) => isSimLap[i]);
+}
+
+/**
+ * Long-run laps within one stint (laps in lap order), using sessionBest —
+ * the driver's fastest lap across their whole session, not just this stint
+ * — as the anchor. See RACE_SIM_LONG_RUN_MIN_GAP for why: unlike
+ * findRaceSimLapFlags, which compares a window to its own stint's best, a
+ * flat/low-degradation long run usually never drifts far from its own
+ * stint-best, so that comparison misses it. Comparing to the session-best
+ * (typically a push lap on a different, fresher-tyre stint) instead reflects
+ * how a long run is actually recognized: a sustained run meaningfully slower
+ * than the driver's one-lap pace that weekend.
+ */
+function findLongRunLapFlags(stintLapDurationsInOrder: number[], sessionBest: number): boolean[] {
+  const n = stintLapDurationsInOrder.length;
+  const isLongRunLap = new Array(n).fill(false);
+
+  for (let start = 0; start <= n - RACE_SIM_RUN_LENGTH; start++) {
+    for (let end = start + RACE_SIM_RUN_LENGTH; end <= n; end++) {
+      const window = stintLapDurationsInOrder.slice(start, end);
+      const inBand = window.filter((lap) => lap - sessionBest >= RACE_SIM_LONG_RUN_MIN_GAP).length;
+      const spread = Math.max(...window) - Math.min(...window);
+      // require all but at most one lap off the pace, and a tight enough
+      // spread that this reads as sustained degradation rather than a mix
+      // of push laps and traffic-slowed laps landing in the same window
+      if (inBand >= window.length - 1 && spread <= RACE_SIM_LONG_RUN_MAX_SPREAD) {
+        for (let j = start; j < end; j++) isLongRunLap[j] = true;
+      }
+    }
+  }
+  return isLongRunLap;
 }
 
 /**
@@ -363,14 +431,30 @@ async function computeSessionRaceSimRelativePace(
     lapsByStint.set(stint.id, stintLaps);
   }
 
+  // driver's fastest lap across the whole session (any stint/compound) --
+  // the anchor findLongRunLapFlags compares against. See
+  // RACE_SIM_LONG_RUN_MIN_GAP for why this has to be session-wide rather
+  // than per-stint.
+  const sessionBestByDriver = new Map<number, number>();
+  for (const lap of sessionLaps) {
+    if (lap.lapDuration == null) continue;
+    const current = sessionBestByDriver.get(lap.driverId);
+    if (current == null || lap.lapDuration < current) {
+      sessionBestByDriver.set(lap.driverId, lap.lapDuration);
+    }
+  }
+
   // driverId+compound -> race-sim (long-run) lap durations only
   const simLapsByDriverCompound = new Map<string, number[]>();
   for (const stint of sessionStints) {
     if (!stint.compound || stint.compound === "UNKNOWN" || stint.compound === "TEST_UNKNOWN") continue;
     const stintLaps = lapsByStint.get(stint.id);
     if (!stintLaps || stintLaps.length === 0) continue;
+    const sessionBest = sessionBestByDriver.get(stint.driverId);
+    if (sessionBest == null) continue;
 
-    const simRuns = extractRaceSimLaps(stintLaps);
+    const flags = findLongRunLapFlags(stintLaps, sessionBest);
+    const simRuns = stintLaps.filter((_, i) => flags[i]);
     if (simRuns.length === 0) continue;
 
     const key = `${stint.driverId}:${stint.compound}`;
