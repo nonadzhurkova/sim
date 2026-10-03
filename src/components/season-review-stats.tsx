@@ -18,47 +18,102 @@ function fmtPct(v: number | null): string {
  * the point: the gap between the bars *is* the finding, "qualifying made the
  * model meaningfully more accurate."
  */
+/**
+ * Pre/post pair where the headline number is a plain count ("12 of 24
+ * races") and the percentage is demoted to a small detail line -- the raw
+ * count is what a reader actually wants here ("winner picked on 12/24
+ * races"), not a rounded percentage as the primary figure.
+ */
 function ComparisonCard({
   title,
   sub,
   pre,
   post,
-  preLabel,
-  postLabel,
+  preCount,
+  postCount,
 }: {
   title: string;
   sub?: string;
   pre: number | null;
   post: number | null;
-  preLabel: string;
-  postLabel: string;
+  preCount: string;
+  postCount: string;
 }) {
   const max = Math.max(pre ?? 0, post ?? 0, 0.01);
   return (
     <div className="border border-[#262a35] bg-[#12141a] p-5">
       <p className="font-heading min-h-[3.25rem] text-lg font-bold leading-tight text-[#f2f3f5]">{title}</p>
-      <div className="mt-4 flex flex-col gap-3">
+      <div className="mt-4 flex flex-col gap-4">
         {([
-          ["Pre-quali", pre, preLabel, STAGE_COLOR.preQuali],
-          ["Post-quali", post, postLabel, STAGE_COLOR.postQuali],
-        ] as const).map(([label, value, detail, color]) => (
+          ["Pre-quali", pre, preCount, STAGE_COLOR.preQuali],
+          ["Post-quali", post, postCount, STAGE_COLOR.postQuali],
+        ] as const).map(([label, value, count, color]) => (
           <div key={label}>
-            <div className="flex items-baseline justify-between">
-              <span className="hud-mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[#8a91a3]">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                {label}
+            <span className="hud-mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[#8a91a3]">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+              {label}
+            </span>
+            <div className="mt-1 flex items-baseline justify-between gap-2">
+              <span className="font-heading text-2xl font-extrabold leading-none" style={{ color: value == null ? "#f2f3f5" : color }}>
+                {count}
               </span>
-              <span className="font-heading text-2xl font-extrabold" style={{ color: value == null ? "#f2f3f5" : color }}>
+              <span className="hud-mono shrink-0 text-xs text-[#5a6175]">
                 {value == null ? "—" : `${(value * 100).toFixed(0)}%`}
               </span>
             </div>
-            <div className="relative mt-1 h-1.5 bg-[#1e212b]">
+            <div className="relative mt-1.5 h-1.5 bg-[#1e212b]">
               <div
                 className="hud-bar-fill h-1.5"
                 style={{ width: `${value == null ? 0 : Math.max((value / max) * 100, 2)}%`, backgroundColor: color }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-[#5a6175]">{detail}</p>
+          </div>
+        ))}
+      </div>
+      {sub && <p className="mt-3 text-[11px] text-[#5a6175]">{sub}</p>}
+    </div>
+  );
+}
+
+/**
+ * Pre/post pair where there's no natural count to lead with (a probability
+ * average, not a tally) -- headline stays the percentage, unlike
+ * ComparisonCard above.
+ */
+function PercentComparisonCard({
+  title,
+  sub,
+  pre,
+  post,
+}: {
+  title: string;
+  sub?: string;
+  pre: number | null;
+  post: number | null;
+}) {
+  const max = Math.max(pre ?? 0, post ?? 0, 0.01);
+  return (
+    <div className="border border-[#262a35] bg-[#12141a] p-5">
+      <p className="font-heading min-h-[3.25rem] text-lg font-bold leading-tight text-[#f2f3f5]">{title}</p>
+      <div className="mt-4 flex flex-col gap-4">
+        {([
+          ["Pre-quali", pre, STAGE_COLOR.preQuali],
+          ["Post-quali", post, STAGE_COLOR.postQuali],
+        ] as const).map(([label, value, color]) => (
+          <div key={label}>
+            <span className="hud-mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[#8a91a3]">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+              {label}
+            </span>
+            <span className="font-heading mt-1 block text-2xl font-extrabold leading-none" style={{ color: value == null ? "#f2f3f5" : color }}>
+              {fmtPct(value)}
+            </span>
+            <div className="relative mt-1.5 h-1.5 bg-[#1e212b]">
+              <div
+                className="hud-bar-fill h-1.5"
+                style={{ width: `${value == null ? 0 : Math.max((value / max) * 100, 2)}%`, backgroundColor: color }}
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -97,23 +152,21 @@ export function SeasonReviewStats({ summary }: { summary: SeasonReviewSummary })
         title="Win pick hit rate"
         pre={preRate.total > 0 ? preRate.hits / preRate.total : null}
         post={postRate.total > 0 ? postRate.hits / postRate.total : null}
-        preLabel={`${preRate.hits} of ${preRate.total} races`}
-        postLabel={`${postRate.hits} of ${postRate.total} races`}
+        preCount={`${preRate.hits} of ${preRate.total} races`}
+        postCount={`${postRate.hits} of ${postRate.total} races`}
       />
       <ComparisonCard
         title="Podium hit rate"
         pre={prePodium.total > 0 ? prePodium.hits / prePodium.total : null}
         post={postPodium.total > 0 ? postPodium.hits / postPodium.total : null}
-        preLabel={`${prePodium.hits} of ${prePodium.total} slots`}
-        postLabel={`${postPodium.hits} of ${postPodium.total} slots`}
+        preCount={`${prePodium.hits} of ${prePodium.total} slots`}
+        postCount={`${postPodium.hits} of ${postPodium.total} slots`}
       />
-      <ComparisonCard
+      <PercentComparisonCard
         title="Confidence in eventual winner"
         sub="Average win% the model gave the driver who actually won"
         pre={summary.preQualiWinnerAvgWinPct}
         post={summary.postQualiWinnerAvgWinPct}
-        preLabel={fmtPct(summary.preQualiWinnerAvgWinPct)}
-        postLabel={fmtPct(summary.postQualiWinnerAvgWinPct)}
       />
       <StatCard
         label="Top-3 call changed after qualifying"
