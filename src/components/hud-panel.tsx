@@ -16,7 +16,10 @@ export function SectionHeading({ eyebrow, title }: { eyebrow: string; title: str
   );
 }
 
-const PODIUM_EDGE = ["#f3c13a", "#c9cfdb", "#e08a3c"];
+export const PODIUM_EDGE = ["#f3c13a", "#c9cfdb", "#e08a3c"];
+
+/** Pre-quali (simulated grid, provisional) vs post-quali (real grid) accent colors -- used anywhere both stages are shown side by side so they're distinguishable at a glance, not just by label text. */
+export const STAGE_COLOR = { preQuali: "#f3b23a", postQuali: "#34d399" };
 
 function pct(v: number): string {
   if (v >= 0.995) return "100";

@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { drivers, teams, raceResults, xgboostPredictions, retroactivePredictionCache } from "@/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { drivers, teams, raceResults, xgboostPredictions, retroactivePredictionCache, races, circuits } from "@/db/schema";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { BLEND_ALPHA, DEFAULT_ITERATIONS } from "@/sim/params";
 import { getFrozenPrediction, calibrateOutcome, type StoredSimulation } from "@/sim/run-simulation";
 import { buildSimContext } from "@/sim/entrants";
@@ -303,4 +303,124 @@ export async function getPredictionStages(raceId: number, existingReview?: Predi
     : null;
 
   return { preQuali, postQuali, actualPodium };
+}
+
+export type SeasonReviewRaceRow = {
+  raceId: number;
+  round: number;
+  circuitName: string;
+  date: string;
+  stages: PredictionStages;
+  /** Did each stage's #1 pick match the actual winner? Null when that stage has no prediction at all. */
+  preQualiWinnerHit: boolean | null;
+  postQualiWinnerHit: boolean | null;
+  /** How many of each stage's top-3 picks landed in the actual podium (0-3). Null when that stage has no prediction. */
+  preQualiPodiumHits: number | null;
+  postQualiPodiumHits: number | null;
+  /** True when the set of drivers in the top 3 changed between pre- and post-qualifying picks. Null when either stage is missing. */
+  topThreeChanged: boolean | null;
+};
+
+export type SeasonReviewSummary = {
+  season: number;
+  races: SeasonReviewRaceRow[];
+  /** Aggregates only count races where that stage actually has a prediction -- an upcoming race or a stage nobody ran contributes to neither the numerator nor denominator. */
+  preQualiWinnerHitRate: { hits: number; total: number };
+  postQualiWinnerHitRate: { hits: number; total: number };
+  preQualiPodiumHitRate: { hits: number; total: number };
+  postQualiPodiumHitRate: { hits: number; total: number };
+  /** Average of the winning driver's predicted win% at each stage, across races where that stage predicted the eventual winner's probability at all (i.e. the winner was in the field). A rough calibration read: a well-calibrated model's winners should average well below 100% (lots of close fields) but clearly above a uniform 1/20 baseline. */
+  preQualiWinnerAvgWinPct: number | null;
+  postQualiWinnerAvgWinPct: number | null;
+  topThreeChangedCount: number;
+  comparableRaceCount: number;
+};
+
+function podiumHits(entries: PredictionStageEntry[]): number {
+  return entries.filter((d) => d.actualFinish != null && d.actualFinish <= 3).length;
+}
+
+function winnerHit(entries: PredictionStageEntry[]): boolean {
+  return entries.some((d) => d.actualFinish === 1) && entries[0]?.actualFinish === 1;
+}
+
+/**
+ * Season-wide rollup of getPredictionStages across every finished race, for
+ * the /season/[season]/review page -- "how did the model's call change
+ * between pre-quali and post-quali, and how often was each stage right."
+ * Reuses getPredictionStages per race rather than re-deriving the
+ * frozen/retroactive distinction here, so this page is automatically
+ * consistent with each race's own prediction-over-time panel.
+ */
+export async function getSeasonPredictionReview(season: number): Promise<SeasonReviewSummary> {
+  const raceRows = await db
+    .select({ id: races.id, round: races.round, date: races.date, circuitName: circuits.name })
+    .from(races)
+    .innerJoin(circuits, eq(races.circuitId, circuits.id))
+    .where(eq(races.season, season))
+    .orderBy(asc(races.round));
+
+  const reviews = await Promise.all(
+    raceRows.map(async (r) => ({ race: r, review: await buildPredictionReview(r.id) })),
+  );
+  const finished = reviews.filter((r): r is typeof r & { review: PredictionReview } => r.review != null);
+
+  const rows: SeasonReviewRaceRow[] = await Promise.all(
+    finished.map(async ({ race, review }) => {
+      const stages = await getPredictionStages(race.id, review);
+      const preEntries = stages.preQuali?.entries ?? null;
+      const postEntries = stages.postQuali?.entries ?? null;
+
+      const topThreeChanged =
+        preEntries && postEntries
+          ? new Set(preEntries.map((d) => d.driverId)).symmetricDifference(new Set(postEntries.map((d) => d.driverId))).size > 0
+          : null;
+
+      return {
+        raceId: race.id,
+        round: race.round,
+        circuitName: race.circuitName,
+        date: race.date,
+        stages,
+        preQualiWinnerHit: preEntries ? winnerHit(preEntries) : null,
+        postQualiWinnerHit: postEntries ? winnerHit(postEntries) : null,
+        preQualiPodiumHits: preEntries ? podiumHits(preEntries) : null,
+        postQualiPodiumHits: postEntries ? podiumHits(postEntries) : null,
+        topThreeChanged,
+      };
+    }),
+  );
+
+  const rate = (hits: (boolean | null)[]) => {
+    const known = hits.filter((h): h is boolean => h != null);
+    return { hits: known.filter(Boolean).length, total: known.length };
+  };
+
+  const podiumRate = (hits: (number | null)[]) => {
+    const known = hits.filter((h): h is number => h != null);
+    return { hits: known.reduce((a, b) => a + b, 0), total: known.length * 3 };
+  };
+
+  const winnerAvgWinPct = (stageKey: "preQuali" | "postQuali") => {
+    const pcts = rows
+      .map((r) => {
+        const entries = r.stages[stageKey]?.entries;
+        return entries?.find((d) => d.actualFinish === 1)?.winPct ?? null;
+      })
+      .filter((p): p is number => p != null);
+    return pcts.length > 0 ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+  };
+
+  return {
+    season,
+    races: rows,
+    preQualiWinnerHitRate: rate(rows.map((r) => r.preQualiWinnerHit)),
+    postQualiWinnerHitRate: rate(rows.map((r) => r.postQualiWinnerHit)),
+    preQualiPodiumHitRate: podiumRate(rows.map((r) => r.preQualiPodiumHits)),
+    postQualiPodiumHitRate: podiumRate(rows.map((r) => r.postQualiPodiumHits)),
+    preQualiWinnerAvgWinPct: winnerAvgWinPct("preQuali"),
+    postQualiWinnerAvgWinPct: winnerAvgWinPct("postQuali"),
+    topThreeChangedCount: rows.filter((r) => r.topThreeChanged === true).length,
+    comparableRaceCount: rows.filter((r) => r.topThreeChanged != null).length,
+  };
 }
