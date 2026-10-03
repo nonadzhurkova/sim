@@ -158,14 +158,22 @@ export async function blendLiveOutcome(
   });
   const sum = raw.reduce((a, b) => a + b, 0);
 
+  // outcomeDrivers arrives sorted by pure MC winPct (engine.ts). Blending
+  // can reorder the field -- a driver XGBoost rates much higher than MC does
+  // can end up with a higher blended winPct than someone MC ranked above
+  // them -- so this re-sorts rather than keeping the pre-blend array order,
+  // which would otherwise silently mismatch getPredictionStages' own top-N
+  // (sorted by blended winPct) for the same frozen run.
   return {
     isBlended: true,
-    drivers: outcomeDrivers.map((d, i) => ({
-      ...d,
-      mcWinPct: d.winPct,
-      xgbWinPct: xgbRawByDriverId.get(d.driverId) ?? null,
-      winPct: sum > 0 ? raw[i] / sum : d.winPct,
-    })),
+    drivers: outcomeDrivers
+      .map((d, i) => ({
+        ...d,
+        mcWinPct: d.winPct,
+        xgbWinPct: xgbRawByDriverId.get(d.driverId) ?? null,
+        winPct: sum > 0 ? raw[i] / sum : d.winPct,
+      }))
+      .sort((a, b) => b.winPct - a.winPct),
   };
 }
 
