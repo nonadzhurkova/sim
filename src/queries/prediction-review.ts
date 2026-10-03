@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { raceResults, drivers, teams, xgboostPredictions } from "@/db/schema";
+import { raceResults, qualifyingResults, drivers, teams, circuits, races, xgboostPredictions } from "@/db/schema";
 import { eq, inArray, and, desc } from "drizzle-orm";
 import { buildSimContext } from "@/sim/entrants";
 import { runSimulation } from "@/sim/engine";
@@ -27,6 +27,24 @@ export type PredictionReviewRow = {
   rankError: number | null;
   /** Pre-Platt-calibration win probability. Only set on xgboost review rows -- what the production blend (BLEND_ALPHA) actually uses, since XGBoost's own Platt fit was dropped (see README). */
   rawWinProbability?: number;
+  /**
+   * The model's own per-driver DNF probability, when available. Monte Carlo
+   * rows only have this when reconstructed live (DriverOutcome.dnfPct) --
+   * a genuinely frozen run only stored winPct/podiumPct/pointsPct, so this
+   * is null for a frozen row, not a bug. XGBoost rows always have it
+   * (predDnfProb is stored/computed either way).
+   */
+  predictedDnfProbability: number | null;
+  /**
+   * True when this driver's actual starting grid position differs from
+   * their qualifying classification -- a grid penalty or pit-lane start,
+   * the one concretely knowable reason a prediction (built from qualifying
+   * form) can miss without it being the model's fault. Null when either
+   * position is unknown.
+   */
+  startedOutOfPosition: boolean | null;
+  /** This driver's actual starting grid position for the race, when known. */
+  gridPosition: number | null;
 };
 
 export type PredictionReview = {
@@ -79,7 +97,18 @@ export type PredictionReview = {
     winnerPredictedRank: number | null;
     podiumHits: number;
     logLoss: number | null;
+    /**
+     * How many finishers each parent model called closer, for the one-line
+     * "XGBoost was closer on N, Monte Carlo on M, tied on T" summary. Null
+     * when there's nothing to compare (no xgboost review, handled by the
+     * surrounding `blended` being null in that case).
+     */
+    closerModelCounts: { monteCarlo: number; xgboost: number; tie: number };
   } | null;
+  /** Circuit type (street/technical/high_speed), for the pipeline strip's plain-English description of this race's inputs. */
+  circuitType: string | null;
+  /** The production blend weight (BLEND_ALPHA in params.ts) in effect when this review was built -- same value regardless of race, surfaced here so the UI doesn't need its own import of a sim-internal constant. */
+  blendAlpha: number;
 };
 
 const LOG_LOSS_FLOOR = 1e-4;
@@ -111,9 +140,10 @@ async function getFrozenXgboostPrediction(raceId: number) {
  */
 async function buildXgboostReview(
   raceId: number,
-  actualByDriver: Map<number, { finishPosition: number | null; status: "finished" | "dnf" | "dsq" | null }>,
+  actualByDriver: Map<number, { finishPosition: number | null; status: "finished" | "dnf" | "dsq" | null; gridPosition: number | null }>,
   winnerRow: { driverId: number } | undefined,
   actualPodiumIds: Set<number>,
+  outOfPositionByDriver: Map<number, boolean>,
 ): Promise<PredictionReview["xgboost"]> {
   const driverRows = await db.select({ id: drivers.id, externalRef: drivers.externalRef, name: drivers.name }).from(drivers);
   const nameById = new Map(driverRows.map((d) => [d.id, d.name]));
@@ -179,6 +209,9 @@ async function buildXgboostReview(
       actualStatus: actual?.status ?? null,
       rankError: actualFinish != null ? actualFinish - predictedRank : null,
       rawWinProbability: p.rawWinProbability,
+      predictedDnfProbability: p.predDnfProb,
+      startedOutOfPosition: outOfPositionByDriver.get(p.driverId) ?? null,
+      gridPosition: actual?.gridPosition ?? null,
     };
   });
 
@@ -208,7 +241,8 @@ async function buildXgboostReview(
 async function rowsFromFrozen(
   frozen: NonNullable<Awaited<ReturnType<typeof getFrozenPrediction>>>,
   raceId: number,
-  actualByDriver: Map<number, { finishPosition: number | null; status: "finished" | "dnf" | "dsq" | null }>,
+  actualByDriver: Map<number, { finishPosition: number | null; status: "finished" | "dnf" | "dsq" | null; gridPosition: number | null }>,
+  outOfPositionByDriver: Map<number, boolean>,
 ): Promise<PredictionReviewRow[]> {
   const driverIds = frozen.results.map((r) => r.driverId);
   const nameRows = driverIds.length
@@ -241,6 +275,12 @@ async function rowsFromFrozen(
       actualFinish: actual?.status === "finished" ? actual.finishPosition : null,
       actualStatus: actual?.status ?? null,
       rankError: null,
+      // simulation_results only persists winPct/podiumPct/pointsPct -- a
+      // frozen Monte Carlo run has no per-driver DNF probability to recover,
+      // unlike the live-reconstruction path below (DriverOutcome.dnfPct).
+      predictedDnfProbability: null,
+      startedOutOfPosition: outOfPositionByDriver.get(r.driverId) ?? null,
+      gridPosition: actual?.gridPosition ?? null,
     };
   });
 }
@@ -263,6 +303,7 @@ export async function buildPredictionReview(
       driverId: raceResults.driverId,
       finishPosition: raceResults.finishPosition,
       status: raceResults.status,
+      gridPosition: raceResults.gridPosition,
     })
     .from(raceResults)
     .where(eq(raceResults.raceId, raceId));
@@ -274,6 +315,30 @@ export async function buildPredictionReview(
     actualRows.filter((a) => a.status === "finished" && a.finishPosition != null && a.finishPosition <= 3).map((a) => a.driverId),
   );
 
+  // "Started out of position": actual starting grid slot differs from the
+  // qualifying classification -- a grid penalty or pit-lane start, the one
+  // concretely knowable reason a prediction can miss without it being the
+  // model's fault (the model predicts from qualifying form, not penalties
+  // handed out afterward).
+  const qualiRows = await db
+    .select({ driverId: qualifyingResults.driverId, position: qualifyingResults.position })
+    .from(qualifyingResults)
+    .where(eq(qualifyingResults.raceId, raceId));
+  const qualiPositionByDriver = new Map(qualiRows.map((r) => [r.driverId, r.position]));
+  const outOfPositionByDriver = new Map<number, boolean>();
+  for (const a of actualRows) {
+    const qualiPos = qualiPositionByDriver.get(a.driverId);
+    if (qualiPos != null && a.gridPosition != null) {
+      outOfPositionByDriver.set(a.driverId, qualiPos !== a.gridPosition);
+    }
+  }
+
+  const [circuitRow] = await db
+    .select({ circuitType: circuits.type })
+    .from(races)
+    .innerJoin(circuits, eq(races.circuitId, circuits.id))
+    .where(eq(races.id, raceId));
+
   const frozen = await getFrozenPrediction(raceId);
 
   let rows: PredictionReviewRow[];
@@ -283,7 +348,7 @@ export async function buildPredictionReview(
   let modelVersion: string | null;
 
   if (frozen) {
-    rows = await rowsFromFrozen(frozen, raceId, actualByDriver);
+    rows = await rowsFromFrozen(frozen, raceId, actualByDriver, outOfPositionByDriver);
     iterationsUsed = frozen.run.iterationCount;
     hasRealGrid = true; // a pre-race run only exists once the grid/context was buildable
     isFrozen = true;
@@ -304,6 +369,9 @@ export async function buildPredictionReview(
       actualFinish: actualByDriver.get(d.driverId)?.status === "finished" ? actualByDriver.get(d.driverId)!.finishPosition : null,
       actualStatus: actualByDriver.get(d.driverId)?.status ?? null,
       rankError: null,
+      predictedDnfProbability: d.dnfPct,
+      startedOutOfPosition: outOfPositionByDriver.get(d.driverId) ?? null,
+      gridPosition: actualByDriver.get(d.driverId)?.gridPosition ?? null,
     }));
     iterationsUsed = iterations;
     hasRealGrid = outcome.hasRealGrid;
@@ -329,7 +397,7 @@ export async function buildPredictionReview(
   const winnerProb = actualWinner?.winProbability ?? null;
   const logLoss = winnerProb != null ? -Math.log(Math.max(winnerProb, LOG_LOSS_FLOOR)) : null;
 
-  const xgboost = await buildXgboostReview(raceId, actualByDriver, winnerRow, actualPodiumIds);
+  const xgboost = await buildXgboostReview(raceId, actualByDriver, winnerRow, actualPodiumIds, outOfPositionByDriver);
   const blended = buildBlendedReview(rows, xgboost, actualByDriver, winnerRow, actualPodiumIds);
 
   return {
@@ -347,6 +415,8 @@ export async function buildPredictionReview(
     modelVersion,
     xgboost,
     blended,
+    circuitType: circuitRow?.circuitType ?? null,
+    blendAlpha: BLEND_ALPHA,
   };
 }
 
@@ -408,6 +478,13 @@ function buildBlendedReview(
       actualStatus: actual?.status ?? null,
       rankError: actualFinish != null ? actualFinish - predictedRank : null,
       closerModel,
+      // Neither parent's DNF estimate is "the blend's" own -- show the
+      // Monte Carlo row's (same convention the table already uses for
+      // predictedFinish being null on the blend: this field isn't something
+      // a win-probability blend produces on its own).
+      predictedDnfProbability: mcRow.predictedDnfProbability,
+      startedOutOfPosition: mcRow.startedOutOfPosition,
+      gridPosition: mcRow.gridPosition,
     };
   });
 
@@ -417,11 +494,19 @@ function buildBlendedReview(
   const winnerProb = winnerRowBlend?.winProbability ?? null;
   const logLoss = winnerProb != null ? -Math.log(Math.max(winnerProb, LOG_LOSS_FLOOR)) : null;
 
+  const closerModelCounts = { monteCarlo: 0, xgboost: 0, tie: 0 };
+  for (const r of rows) {
+    if (r.closerModel === "monte-carlo") closerModelCounts.monteCarlo++;
+    else if (r.closerModel === "xgboost") closerModelCounts.xgboost++;
+    else if (r.closerModel === "tie") closerModelCounts.tie++;
+  }
+
   return {
     rows,
     favourite,
     winnerPredictedRank: winnerRowBlend?.predictedRank ?? null,
     podiumHits,
     logLoss,
+    closerModelCounts,
   };
 }

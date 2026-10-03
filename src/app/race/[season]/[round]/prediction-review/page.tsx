@@ -4,6 +4,7 @@ import { getRaceByRoute } from "@/queries/races";
 import { buildPredictionReview } from "@/queries/prediction-review";
 import { PredictionReviewTable } from "@/components/prediction-review-table";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { SectionHeading } from "@/components/hud-panel";
 
 /**
  * How the model's prediction for one already-run race compares to what
@@ -35,13 +36,8 @@ export default async function PredictionReviewPage({
           { label: "Prediction Review" },
         ]}
       />
-      <div className="mt-2 flex items-center justify-between gap-4">
-        <div>
-          <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
-            {season} {"//"} Round {String(round).padStart(2, "0")}
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-100">{race.circuitName} — Prediction Review</h1>
-        </div>
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <SectionHeading eyebrow={`${season} // Round ${String(round).padStart(2, "0")}`} title={`${race.circuitName} — Review`} />
         <Link
           href={`/race/${season}/${round}`}
           className="hud-mono border border-red-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-red-400 transition-colors hover:border-red-500 hover:text-red-300"
