@@ -7,6 +7,7 @@ import {
   real,
   boolean,
   timestamp,
+  jsonb,
   pgEnum,
   unique,
 } from "drizzle-orm/pg-core";
@@ -36,6 +37,23 @@ export const simulationStatusEnum = pgEnum("simulation_status", [
   "running",
   "completed",
   "failed",
+]);
+
+/**
+ * Which point in the race weekend a simulation run represents. Stored once
+ * at completion (derived from hasRealGrid + predictedBeforeRace) rather than
+ * recomputed later, so a run's stage stays fixed even after qualifying or
+ * the race happens -- without this, "the latest pre-race run" silently
+ * collapses a pre-qualifying prediction and a post-qualifying one into the
+ * same slot the moment the second one is made, losing the first.
+ * post_race is reserved for the prediction-review reconstruction path (a
+ * live replay made after the result is known); runAndStoreSimulation/
+ * streamSimulation only ever produce pre_quali or post_quali.
+ */
+export const predictionStageEnum = pgEnum("prediction_stage", [
+  "pre_quali",
+  "post_quali",
+  "post_race",
 ]);
 
 export const drivers = pgTable(
@@ -315,7 +333,42 @@ export const simulationRuns = pgTable("simulation_runs", {
   // the qualiForm trimmed-mean fix" from "this run postdates it" without
   // guessing from the timestamp alone.
   modelVersion: text("model_version"),
+  // Set once the run completes (see predictionStageEnum's own doc comment).
+  // Null while a run is still pending/running, and for old rows written
+  // before this column existed -- getFrozenPrediction treats a null stage
+  // as "pre_quali" for those, since every run before this feature existed
+  // was effectively the single undifferentiated "latest pre-race" slot.
+  stage: predictionStageEnum("stage"),
 });
+
+/**
+ * Cache for the "Prediction over time" panel's retroactive fallback (see
+ * reconstructStage in src/queries/race-prediction.ts): a finished race that
+ * predates predictionStageEnum existing has no real pre_quali/post_quali
+ * run recorded, so that panel computes one live, clearly labeled as a
+ * retroactive guess rather than a genuine historical prediction. That
+ * computation is a full Monte Carlo run and too slow to repeat on every page
+ * view, so the result is cached here by (raceId, stage) the first time it's
+ * computed. Deliberately a separate table from simulation_runs rather than
+ * a row there with some "this one's fake" flag -- other code trusts
+ * simulation_runs/predictedBeforeRace as an honest prediction log, and a
+ * table that could contain retroactive guesses would be one more thing
+ * every future reader of that table has to remember to filter out.
+ */
+export const retroactivePredictionCache = pgTable(
+  "retroactive_prediction_cache",
+  {
+    id: serial("id").primaryKey(),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    stage: predictionStageEnum("stage").notNull(),
+    // Top-3 entries: [{ driverId, driverName, teamName, winPct }, ...].
+    entries: jsonb("entries").notNull(),
+    computedAt: timestamp("computed_at").defaultNow(),
+  },
+  (t) => [unique().on(t.raceId, t.stage)],
+);
 
 export const simulationResults = pgTable("simulation_results", {
   id: serial("id").primaryKey(),

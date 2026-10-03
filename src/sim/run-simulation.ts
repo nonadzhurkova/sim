@@ -53,6 +53,16 @@ export async function isBeforeRaceStart(raceId: number): Promise<boolean> {
  * raw probabilities there are already close to calibrated, so identity is
  * the simpler, equally-honest choice.
  */
+/**
+ * Which snapshot slot a just-completed run belongs in (see predictionStageEnum's
+ * doc comment in schema.ts). post_race is never returned here -- a run made
+ * after the race is a reconstruction for review, produced by
+ * prediction-review.ts's own live-replay path, not this module.
+ */
+function stageFor(hasRealGrid: boolean): "pre_quali" | "post_quali" {
+  return hasRealGrid ? "post_quali" : "pre_quali";
+}
+
 export function calibrateOutcome(outcome: SimulationOutcome): SimulationOutcome {
   if (!outcome.hasRealGrid) return outcome;
   const calibratedRaw = outcome.drivers.map((d) => applyCalibration(d.winPct, WIN_PROBABILITY_CALIBRATION));
@@ -202,7 +212,7 @@ export async function runAndStoreSimulation(
     await persistResults(run.id, calibrated);
     await db
       .update(simulationRuns)
-      .set({ status: "completed", completedAt: new Date() })
+      .set({ status: "completed", completedAt: new Date(), stage: stageFor(calibrated.hasRealGrid) })
       .where(eq(simulationRuns.id, run.id));
 
     return {
@@ -300,7 +310,7 @@ export async function* streamSimulation(
     const completedAt = new Date();
     await db
       .update(simulationRuns)
-      .set({ status: "completed", completedAt })
+      .set({ status: "completed", completedAt, stage: stageFor(calibrated.hasRealGrid) })
       .where(eq(simulationRuns.id, run.id));
 
     yield {
@@ -393,8 +403,16 @@ export async function getLatestSimulation(raceId: number) {
  * so far was made after it already happened) — the caller falls back to a
  * live re-simulation, clearly labelled as reconstructed rather than
  * contemporaneous.
+ *
+ * Pass `stage` to pin this to one specific snapshot (pre_quali or
+ * post_quali) instead of "whichever pre-race run is newest" — used by the
+ * prediction-over-time comparison, which needs each stage's own snapshot to
+ * stay recoverable even after a later stage's run has happened. Omitting it
+ * keeps the original behavior every existing caller (the race page, the
+ * home page, prediction-review) relies on: the single latest pre-race run,
+ * regardless of which stage it belongs to.
  */
-export async function getFrozenPrediction(raceId: number) {
+export async function getFrozenPrediction(raceId: number, stage?: "pre_quali" | "post_quali") {
   const [run] = await db
     .select()
     .from(simulationRuns)
@@ -403,6 +421,7 @@ export async function getFrozenPrediction(raceId: number) {
         eq(simulationRuns.raceId, raceId),
         eq(simulationRuns.status, "completed"),
         eq(simulationRuns.predictedBeforeRace, true),
+        stage ? eq(simulationRuns.stage, stage) : undefined,
       ),
     )
     .orderBy(desc(simulationRuns.completedAt))

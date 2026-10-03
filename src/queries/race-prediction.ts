@@ -1,9 +1,11 @@
 import { db } from "@/db";
-import { drivers, teams, raceResults, xgboostPredictions } from "@/db/schema";
+import { drivers, teams, raceResults, xgboostPredictions, retroactivePredictionCache } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { BLEND_ALPHA } from "@/sim/params";
-import { getFrozenPrediction, type StoredSimulation } from "@/sim/run-simulation";
-import type { SimulationOutcome } from "@/sim/engine";
+import { BLEND_ALPHA, DEFAULT_ITERATIONS } from "@/sim/params";
+import { getFrozenPrediction, calibrateOutcome, type StoredSimulation } from "@/sim/run-simulation";
+import { buildSimContext } from "@/sim/entrants";
+import { runSimulation, type SimulationOutcome } from "@/sim/engine";
+import { buildPredictionReview, type PredictionReview } from "./prediction-review";
 
 export type BlendedDriverPrediction = {
   driverId: number;
@@ -84,8 +86,11 @@ async function loadDriverLabels(raceId: number, driverIds: number[]) {
  * caller is expected to fall back to its own live-replay logic the same way
  * prediction-review.ts already does for the pure-MC case.
  */
-export async function getBlendedPrediction(raceId: number): Promise<RacePrediction | null> {
-  const frozen = await getFrozenPrediction(raceId);
+export async function getBlendedPrediction(
+  raceId: number,
+  stage?: "pre_quali" | "post_quali",
+): Promise<RacePrediction | null> {
+  const frozen = await getFrozenPrediction(raceId, stage);
   if (!frozen || frozen.results.length === 0) return null;
 
   const driverIds = frozen.results.map((r) => r.driverId);
@@ -162,4 +167,140 @@ export async function blendLiveOutcome(
       winPct: sum > 0 ? raw[i] / sum : d.winPct,
     })),
   };
+}
+
+export type PredictionStageEntry = {
+  driverId: number;
+  driverName: string;
+  teamName: string | null;
+  winPct: number;
+  /** How this driver actually finished, once the race has a result -- null for an upcoming race. */
+  actualFinish: number | null;
+};
+
+/** Cached/raw shape before actualFinish is joined in -- see withActual. */
+type RawStageEntry = Omit<PredictionStageEntry, "actualFinish">;
+
+export type PredictionStageResult = { entries: PredictionStageEntry[]; isRetroactive: boolean } | null;
+
+export type ActualPodiumEntry = { driverId: number; driverName: string; teamName: string | null; finish: number };
+
+export type PredictionStages = {
+  preQuali: PredictionStageResult;
+  postQuali: PredictionStageResult;
+  /** The real top 3 finishers, for comparing both stages' calls against what actually happened. Null until the race is run. */
+  actualPodium: ActualPodiumEntry[] | null;
+};
+
+const STAGE_TOP_N = 3;
+
+/**
+ * A pre_quali- or post_quali-style prediction for a race that has already
+ * happened and never had a real run recorded at that stage. "pre_quali"
+ * hides the real grid (forceSimulatedGrid); "post_quali" uses it. Either way
+ * this runs against TODAY's driver/team ratings, not ratings as they stood
+ * at that point in the weekend -- "what the current model guesses," not a
+ * recovered historical prediction, which is why callers flag the result
+ * isRetroactive: true rather than merging it into a genuine frozen run's
+ * slot. Cached in retroactive_prediction_cache after the first computation
+ * (a full Monte Carlo run, too slow to repeat on every page view).
+ */
+async function reconstructStage(
+  raceId: number,
+  stage: "pre_quali" | "post_quali",
+): Promise<RawStageEntry[] | null> {
+  const [cached] = await db
+    .select({ entries: retroactivePredictionCache.entries })
+    .from(retroactivePredictionCache)
+    .where(and(eq(retroactivePredictionCache.raceId, raceId), eq(retroactivePredictionCache.stage, stage)));
+  if (cached) return cached.entries as RawStageEntry[];
+
+  const ctx = await buildSimContext(raceId, undefined, undefined, false, stage === "pre_quali");
+  if (!ctx) return null;
+  const outcome = calibrateOutcome(runSimulation(ctx, DEFAULT_ITERATIONS, { seed: raceId }));
+  if (outcome.drivers.length === 0) return null;
+
+  const entries = [...outcome.drivers]
+    .sort((a, b) => b.winPct - a.winPct)
+    .slice(0, STAGE_TOP_N)
+    .map((d) => ({ driverId: d.driverId, driverName: d.driverName, teamName: d.teamName, winPct: d.winPct }));
+
+  await db
+    .insert(retroactivePredictionCache)
+    .values({ raceId, stage, entries })
+    .onConflictDoNothing();
+
+  return entries;
+}
+
+/**
+ * The model's top 3 at two points in a race weekend -- before qualifying
+ * (simulated grid) and after qualifying but before the race (real grid) --
+ * each annotated with how that driver actually finished, so both calls can
+ * be checked against reality side by side. A stage is null when no
+ * prediction exists for it yet; preQuali is null if the first simulation
+ * for this race wasn't run until after qualifying already happened.
+ *
+ * preQuali/postQuali come from simulation_runs' own stored stage (see
+ * predictionStageEnum in schema.ts). actualFinish per entry, and the
+ * separate actualPodium list, come from an already-built PredictionReview
+ * when the caller has one (the race page always does) rather than
+ * re-deriving the same actual-result lookup a second time.
+ */
+export async function getPredictionStages(raceId: number, existingReview?: PredictionReview | null): Promise<PredictionStages> {
+  const [preQualiFrozen, postQualiFrozen, review] = await Promise.all([
+    getBlendedPrediction(raceId, "pre_quali"),
+    getBlendedPrediction(raceId, "post_quali"),
+    existingReview !== undefined ? Promise.resolve(existingReview) : buildPredictionReview(raceId),
+  ]);
+
+  const actualFinishByDriver = new Map(review?.rows.map((r) => [r.driverId, r.actualFinish]) ?? []);
+
+  const toTopN = (p: RacePrediction | null): PredictionStageEntry[] | null => {
+    if (!p || p.drivers.length === 0) return null;
+    return p.drivers.slice(0, STAGE_TOP_N).map((d) => ({
+      driverId: d.driverId,
+      driverName: d.driverName,
+      teamName: d.teamName,
+      winPct: d.winPct,
+      actualFinish: actualFinishByDriver.get(d.driverId) ?? null,
+    }));
+  };
+
+  const isFinished = review != null;
+
+  const withActual = (entries: RawStageEntry[]): PredictionStageEntry[] =>
+    entries.map((e) => ({ ...e, actualFinish: actualFinishByDriver.get(e.driverId) ?? null }));
+
+  const preQualiEntries = toTopN(preQualiFrozen);
+  let preQuali: PredictionStageResult = preQualiEntries ? { entries: preQualiEntries, isRetroactive: false } : null;
+  // No genuine pre_quali run was ever recorded for this race. If it's
+  // already finished, there's no way to recover a real one -- qualifying
+  // already happened -- so fall back to a clearly-flagged retroactive
+  // reconstruction instead of leaving the slot empty. An upcoming race just
+  // waits for a real run (no fallback): "no prediction made yet" is the
+  // honest state there, not something to paper over.
+  if (!preQuali && isFinished) {
+    const retro = await reconstructStage(raceId, "pre_quali");
+    preQuali = retro ? { entries: withActual(retro), isRetroactive: true } : null;
+  }
+
+  const postQualiEntries = toTopN(postQualiFrozen);
+  let postQuali: PredictionStageResult = postQualiEntries ? { entries: postQualiEntries, isRetroactive: false } : null;
+  // Same honesty rule as preQuali above: a finished race with no real
+  // post_quali run recorded gets a flagged retroactive reconstruction
+  // (real grid, today's ratings) instead of an empty slot.
+  if (!postQuali && isFinished) {
+    const retro = await reconstructStage(raceId, "post_quali");
+    postQuali = retro ? { entries: withActual(retro), isRetroactive: true } : null;
+  }
+
+  const actualPodium: ActualPodiumEntry[] | null = review
+    ? [...review.rows]
+        .filter((r) => r.actualFinish != null && r.actualFinish <= 3)
+        .sort((a, b) => a.actualFinish! - b.actualFinish!)
+        .map((r) => ({ driverId: r.driverId, driverName: r.driverName, teamName: r.teamName, finish: r.actualFinish! }))
+    : null;
+
+  return { preQuali, postQuali, actualPodium };
 }

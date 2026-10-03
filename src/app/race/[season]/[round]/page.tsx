@@ -16,6 +16,8 @@ import { getCarPerformance } from "@/queries/car-performance";
 import { SectionHeading } from "@/components/hud-panel";
 import { SessionTabBar } from "@/components/session-tab-bar";
 import { SessionWeatherChips } from "@/components/session-weather-chips";
+import { PredictionOverTime } from "@/components/prediction-over-time";
+import { getPredictionStages } from "@/queries/race-prediction";
 
 const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
@@ -54,6 +56,7 @@ export default async function RacePage({
   // to decide whether to lead with "here's the result" or "here's the
   // upcoming prediction."
   const isFinished = review != null;
+  const predictionStages = await getPredictionStages(race.id, review);
 
   return (
     <>
@@ -109,6 +112,10 @@ export default async function RacePage({
           <RacePredictionPanel raceId={race.id} />
         </section>
       )}
+
+      <div className="mt-8">
+        <PredictionOverTime stages={predictionStages} />
+      </div>
 
       <div className="mt-8">
         <FastestLapBanner sessionPace={sessionPace} comparison={comparison} />
