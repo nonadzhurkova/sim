@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { getTeamColor } from "@/lib/team-colors";
 
 /**
  * Section eyebrow + large heading, used above a major block of the page
@@ -34,11 +35,19 @@ export type PodiumEntry = {
   winPct: number;
 };
 
+/** Last name only -- matches pace-projection-panel.tsx's own helper, kept local since both are small, private formatting utilities. */
+function lastName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] ?? name;
+}
+
 /**
  * Top-3 as large editorial cards -- used wherever a win-probability call is
  * the headline (race page's prediction panel, home page's next-race
  * preview), so both read as the same design rather than two near-alike
- * implementations drifting apart.
+ * implementations drifting apart. Accented by each driver's team color
+ * rather than podium gold/silver/bronze -- team identity is the more useful
+ * signal here than finishing-order rank, which P1/P2/P3 already conveys.
  */
 export function PodiumCards({ entries, isLive = false }: { entries: PodiumEntry[]; isLive?: boolean }) {
   const top3 = entries.slice(0, 3);
@@ -46,15 +55,15 @@ export function PodiumCards({ entries, isLive = false }: { entries: PodiumEntry[
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {top3.map((d, i) => {
-        const edge = PODIUM_EDGE[i];
+        const accent = getTeamColor(d.team);
         return (
           <article
             key={d.id}
             className="relative overflow-hidden border border-[#262a35] bg-[#12141a] p-6"
-            style={{ borderTopWidth: 4, borderTopColor: edge }}
+            style={{ borderTopWidth: 4, borderTopColor: accent }}
           >
             <div className="flex items-baseline gap-3">
-              <span className="font-heading text-2xl font-extrabold" style={{ color: edge }}>
+              <span className="font-heading text-2xl font-extrabold" style={{ color: accent }}>
                 P{i + 1}
               </span>
               <span className="hud-mono text-[11px] uppercase tracking-wider text-[#8a91a3]">
@@ -62,10 +71,10 @@ export function PodiumCards({ entries, isLive = false }: { entries: PodiumEntry[
               </span>
             </div>
             <div className="font-heading mt-2 text-3xl font-bold uppercase leading-tight text-[#f2f3f5]">
-              {d.name}
+              {lastName(d.name)}
             </div>
             <div className="mt-5 flex items-baseline gap-1.5">
-              <span className="hud-mono text-5xl font-medium leading-none" style={{ color: i === 0 ? edge : "#f2f3f5" }}>
+              <span className="hud-mono text-5xl font-medium leading-none" style={{ color: i === 0 ? accent : "#f2f3f5" }}>
                 {pct(d.winPct)}
               </span>
               <span className="hud-mono text-xl text-[#a3a9b8]">%</span>
@@ -74,7 +83,7 @@ export function PodiumCards({ entries, isLive = false }: { entries: PodiumEntry[
             <div className="relative mt-4 h-1.5 bg-[#1e212b]">
               <div
                 className={isLive ? "h-1.5 transition-[width] duration-200 ease-out" : "hud-bar-fill h-1.5"}
-                style={{ width: `${Math.max(d.winPct * 100, 2)}%`, backgroundColor: edge }}
+                style={{ width: `${Math.max(d.winPct * 100, 2)}%`, backgroundColor: accent }}
               />
             </div>
           </article>
