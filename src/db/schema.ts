@@ -293,6 +293,40 @@ export const openf1SessionResults = pgTable(
   (t) => [unique().on(t.sessionId, t.driverId)],
 );
 
+/**
+ * A manually-entered grid penalty for a race, applied on top of whatever
+ * grid source is active (real starting grid, classified qualifying, or the
+ * OpenF1-derived reconstruction -- see deriveGridFromQualifyingLaps) when
+ * building a pre-race prediction. Manual rather than sourced from an API:
+ * penalties are announced by stewards well before any API reliably reflects
+ * them in a session's grid data (OpenF1's own starting_grid endpoint is
+ * typically empty until shortly before lights out), and a human confirming
+ * "yes, this penalty is real and this many places" is simpler and more
+ * timely than chasing a data source for something this infrequent.
+ *
+ * placesOffset is how many places the driver drops from their qualifying
+ * position (5 for "5-place grid penalty"); a large value (e.g. 99)
+ * represents "back of the grid." Applied by entrants.ts's
+ * applyGridPenalties, shared by both the Monte Carlo and XGBoost grid
+ * pipelines so they can't disagree about the resulting order.
+ */
+export const gridPenalties = pgTable(
+  "grid_penalties",
+  {
+    id: serial("id").primaryKey(),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    driverId: integer("driver_id")
+      .notNull()
+      .references(() => drivers.id),
+    placesOffset: integer("places_offset").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.raceId, t.driverId)],
+);
+
 export const driverRatings = pgTable(
   "driver_ratings",
   {

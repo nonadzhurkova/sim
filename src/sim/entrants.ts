@@ -10,6 +10,7 @@ import {
   sessions,
   laps,
   openf1SessionResults,
+  gridPenalties,
 } from "@/db/schema";
 import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
@@ -382,13 +383,19 @@ export async function buildSimContext(
   // without knowing qualifying" rather than also hiding who showed up.
   const knownFieldIds = new Set([...realGridByDriver.keys(), ...qualiByDriver.keys(), ...derivedGrid.keys()]);
 
+  // Real starting grid (raceResults.gridPosition) already reflects whatever
+  // penalties applied -- it's the actual result. Penalties only need to be
+  // applied on top of a pre-penalty source (classified qualifying, or the
+  // OpenF1-derived reconstruction), and only for a genuine pre-race
+  // prediction -- forceSimulatedGrid's whole point is hiding qualifying, so
+  // a penalty (which presupposes a known quali result) has no meaning there.
+  const preRaceGridByDriver =
+    realGridByDriver.size > 0 ? realGridByDriver : qualiByDriver.size > 0 ? qualiByDriver : derivedGrid;
   const gridByDriver = forceSimulatedGrid
     ? new Map<number, number>()
     : realGridByDriver.size > 0
       ? realGridByDriver
-      : qualiByDriver.size > 0
-        ? qualiByDriver
-        : derivedGrid;
+      : await applyGridPenalties(raceId, preRaceGridByDriver);
   const hasRealGrid = gridByDriver.size > 0;
   const gridIsProvisional =
     !forceSimulatedGrid && realGridByDriver.size === 0 && qualiByDriver.size === 0 && derivedGrid.size > 0;
@@ -497,6 +504,49 @@ export async function buildSimContext(
     gridIsProvisional,
     entrants,
   };
+}
+
+/**
+ * Applies manually-entered grid penalties (gridPenalties table) on top of a
+ * pre-penalty grid source (classified qualifying, or the OpenF1-derived
+ * reconstruction). Each penalized driver drops placesOffset places; everyone
+ * who was between their old and new slot moves up one to fill the gap --
+ * the same re-numbering a real penalty produces, not just overwriting one
+ * driver's number and leaving a duplicate or a gap in the order.
+ *
+ * Shared by both buildSimContext (Monte Carlo) and buildXgboostFeatures
+ * (XGBoost), so a penalty entered once is seen identically by both models --
+ * the two disagreeing about the grid itself was exactly the round-16 bug
+ * this (and the OpenF1-session_result fix before it) closes off.
+ */
+export async function applyGridPenalties(
+  raceId: number,
+  gridByDriver: Map<number, number>,
+): Promise<Map<number, number>> {
+  if (gridByDriver.size === 0) return gridByDriver;
+
+  const penalties = await db
+    .select({ driverId: gridPenalties.driverId, placesOffset: gridPenalties.placesOffset })
+    .from(gridPenalties)
+    .where(eq(gridPenalties.raceId, raceId));
+  if (penalties.length === 0) return gridByDriver;
+
+  // Work from an ordered list (position -> driverId) so re-numbering after
+  // a drop is just "remove and re-insert," rather than juggling collisions
+  // in the map directly.
+  const order = [...gridByDriver.entries()].sort((a, b) => a[1] - b[1]).map(([driverId]) => driverId);
+  const fieldSize = order.length;
+
+  for (const p of penalties) {
+    const fromIndex = order.indexOf(p.driverId);
+    if (fromIndex === -1) continue;
+    const toIndex = Math.min(fromIndex + p.placesOffset, fieldSize - 1);
+    if (toIndex === fromIndex) continue;
+    order.splice(fromIndex, 1);
+    order.splice(toIndex, 0, p.driverId);
+  }
+
+  return new Map(order.map((driverId, i) => [driverId, i + 1]));
 }
 
 /**

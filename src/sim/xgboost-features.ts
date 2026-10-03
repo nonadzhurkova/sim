@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { races, raceResults, qualifyingResults, drivers } from "@/db/schema";
 import { eq, and, lt, or, desc, inArray } from "drizzle-orm";
-import { deriveGridFromQualifyingLaps } from "@/sim/entrants";
+import { deriveGridFromQualifyingLaps, applyGridPenalties } from "@/sim/entrants";
 
 // How many prior races' results to pull when computing rolling driver/team
 // form. Capped well above the 5-race window actually averaged so that a
@@ -103,7 +103,11 @@ export async function buildXgboostFeatures(raceId: number): Promise<XgboostFeatu
   const derivedGrid =
     realGridByDriver.size === 0 && qualiByDriver.size === 0 ? await deriveGridFromQualifyingLaps(raceId) : new Map<number, number>();
 
-  const gridByDriver = realGridByDriver.size > 0 ? realGridByDriver : qualiByDriver.size > 0 ? qualiByDriver : derivedGrid;
+  // Same real-grid-already-penalized exception as entrants.ts's
+  // buildSimContext -- see applyGridPenalties' doc comment.
+  const preRaceGrid = qualiByDriver.size > 0 ? qualiByDriver : derivedGrid;
+  const gridByDriver =
+    realGridByDriver.size > 0 ? realGridByDriver : await applyGridPenalties(raceId, preRaceGrid);
   if (gridByDriver.size === 0) return null;
 
   const validGrid = [...gridByDriver.entries()].map(([driverId, gridPosition]) => ({

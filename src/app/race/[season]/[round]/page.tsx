@@ -17,6 +17,7 @@ import { SectionHeading } from "@/components/hud-panel";
 import { SessionTabBar } from "@/components/session-tab-bar";
 import { SessionWeatherChips } from "@/components/session-weather-chips";
 import { PredictionOverTime } from "@/components/prediction-over-time";
+import { GridPenaltiesPanel } from "@/components/grid-penalties-panel";
 import { getPredictionStages } from "@/queries/race-prediction";
 
 const SESSION_LABELS: Record<string, string> = {
@@ -108,7 +109,8 @@ export default async function RacePage({
           <RaceResultSummary review={review} season={season} round={round} />
         </section>
       ) : (
-        <section id="race" className="mt-6 scroll-mt-24">
+        <section id="race" className="mt-6 flex flex-col gap-6 scroll-mt-24">
+          <GridPenaltiesPanel raceId={race.id} />
           <RacePredictionPanel raceId={race.id} />
         </section>
       )}
