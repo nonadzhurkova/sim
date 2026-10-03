@@ -187,6 +187,32 @@ export const sessions = pgTable(
   (t) => [unique().on(t.raceId, t.sessionType)],
 );
 
+/**
+ * Last-known scheduled start/end time per session, cached from OpenF1's live
+ * `/sessions` endpoint. Deliberately separate from the `sessions` table,
+ * whose rows mean "this session happened and was ingested" -- a session
+ * scheduled for next week has no such row yet, so its timing can't live
+ * there without changing that meaning. Written opportunistically whenever
+ * /api/session-schedule gets a successful OpenF1 response, read as a
+ * fallback when OpenF1 is locked (e.g. another session is live) so
+ * schedule-dependent UI (weather forecast, the session tab bar) keeps
+ * working with the last times it saw instead of going blank.
+ */
+export const sessionScheduleCache = pgTable(
+  "session_schedule_cache",
+  {
+    id: serial("id").primaryKey(),
+    raceId: integer("race_id")
+      .notNull()
+      .references(() => races.id),
+    sessionType: sessionTypeEnum("session_type").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.raceId, t.sessionType)],
+);
+
 export const laps = pgTable(
   "laps",
   {

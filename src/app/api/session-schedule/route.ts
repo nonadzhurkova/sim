@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { races } from "@/db/schema";
+import { races, sessionScheduleCache } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { openF1Fetch } from "@/lib/openf1-client";
 import { SESSION_TYPE_MAP } from "@/ingest/openf1";
@@ -40,29 +40,65 @@ function scheduledSessionType(sessionName: string): ScheduledSessionType | null 
 // never serve this from a cache.
 export const dynamic = "force-dynamic";
 
+/** Last-known session times from session_schedule_cache, for when OpenF1 can't be reached right now. */
+async function readScheduleCache(raceId: number): Promise<ScheduledSession[]> {
+  const rows = await db
+    .select({
+      sessionType: sessionScheduleCache.sessionType,
+      startsAt: sessionScheduleCache.startsAt,
+      endsAt: sessionScheduleCache.endsAt,
+    })
+    .from(sessionScheduleCache)
+    .where(eq(sessionScheduleCache.raceId, raceId))
+    .orderBy(sessionScheduleCache.startsAt);
+  return rows.map((r) => ({
+    sessionType: r.sessionType as ScheduledSessionType,
+    label: LABELS[r.sessionType as ScheduledSessionType],
+    startsAt: r.startsAt.toISOString(),
+    endsAt: r.endsAt?.toISOString() ?? null,
+  }));
+}
+
+/** Saves each session's time whenever OpenF1 successfully returns one, so a later lock has something to fall back to. */
+async function writeScheduleCache(raceId: number, sessions: ScheduledSession[]) {
+  for (const s of sessions) {
+    await db
+      .insert(sessionScheduleCache)
+      .values({ raceId, sessionType: s.sessionType, startsAt: new Date(s.startsAt), endsAt: s.endsAt ? new Date(s.endsAt) : null })
+      .onConflictDoUpdate({
+        target: [sessionScheduleCache.raceId, sessionScheduleCache.sessionType],
+        set: { startsAt: new Date(s.startsAt), endsAt: s.endsAt ? new Date(s.endsAt) : null, updatedAt: new Date() },
+      });
+  }
+}
+
 /**
  * The scheduled (not necessarily run yet) session times for one race
- * weekend, straight from OpenF1 -- display-only data, not stored in our own
- * sessions table (which only gets a row once a session has actually
- * happened and been ingested). Matched to the race by date, the same 3-day
- * window src/ingest/openf1.ts and src/ingest/freshness.ts already use.
+ * weekend, from OpenF1 -- display-only data, not stored in our own sessions
+ * table (which only gets a row once a session has actually happened and
+ * been ingested). Matched to the race by date, the same 3-day window
+ * src/ingest/openf1.ts and src/ingest/freshness.ts already use.
+ *
+ * Every successful OpenF1 response is saved to session_schedule_cache; when
+ * OpenF1 is locked (another session live) or unreachable, this falls back
+ * to those last-known times instead of returning nothing -- weather and the
+ * session tab bar both depend on session times being available even during
+ * a live-session lock, which is exactly when a visitor is most likely to be
+ * looking at the page.
+ *
+ * Factored out of the GET handler so /api/session-weather can reuse the same
+ * schedule lookup (session times) without duplicating the OpenF1 call.
  */
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const raceId = Number(searchParams.get("raceId"));
-  if (!Number.isInteger(raceId) || raceId < 1) {
-    return Response.json({ error: "Invalid raceId" }, { status: 400 });
-  }
-
+export async function fetchSessionSchedule(raceId: number): Promise<SessionScheduleResult> {
   const [race] = await db.select({ season: races.season, date: races.date }).from(races).where(eq(races.id, raceId));
-  if (!race) {
-    return Response.json({ status: "not_found" } satisfies SessionScheduleResult);
-  }
+  if (!race) return { status: "not_found" };
 
   const result = await openF1Fetch<OpenF1Session>(`/sessions?year=${race.season}`);
   if (!result.ok) {
+    const cached = await readScheduleCache(raceId);
+    if (cached.length > 0) return { status: "ok", sessions: cached };
     const status = result.reason === "locked" ? "locked" : result.reason === "empty" ? "not_found" : "unreachable";
-    return Response.json({ status } satisfies SessionScheduleResult);
+    return { status };
   }
 
   const raceDate = new Date(race.date).getTime();
@@ -75,8 +111,20 @@ export async function GET(req: Request) {
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
   if (sessions.length === 0) {
-    return Response.json({ status: "not_found" } satisfies SessionScheduleResult);
+    const cached = await readScheduleCache(raceId);
+    if (cached.length > 0) return { status: "ok", sessions: cached };
+    return { status: "not_found" };
   }
 
-  return Response.json({ status: "ok", sessions } satisfies SessionScheduleResult);
+  await writeScheduleCache(raceId, sessions);
+  return { status: "ok", sessions };
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const raceId = Number(searchParams.get("raceId"));
+  if (!Number.isInteger(raceId) || raceId < 1) {
+    return Response.json({ error: "Invalid raceId" }, { status: 400 });
+  }
+  return Response.json(await fetchSessionSchedule(raceId));
 }

@@ -134,3 +134,20 @@ export async function getAllSessionPaceForRace(
   });
   return result;
 }
+
+/**
+ * Real recorded weather ("dry"/"wet"/null) per session that has already
+ * happened for this race -- distinct from the forward-looking forecast
+ * (/api/session-weather), which only covers sessions that haven't run yet.
+ */
+export async function getSessionWeatherForRace(
+  raceId: number,
+): Promise<Partial<Record<SessionType, string | null>>> {
+  const rows = await db
+    .select({ sessionType: sessions.sessionType, weather: sessions.weather })
+    .from(sessions)
+    .where(eq(sessions.raceId, raceId));
+  const result: Partial<Record<SessionType, string | null>> = {};
+  for (const r of rows) result[r.sessionType] = r.weather;
+  return result;
+}

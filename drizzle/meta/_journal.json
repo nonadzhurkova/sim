@@ -92,6 +92,13 @@
       "when": 1790822113024,
       "tag": "0012_add_xgboost_raw_win_probability",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791002502192,
+      "tag": "0013_cold_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRaceByRoute, getAdjacentRaces } from "@/queries/races";
-import { getAllSessionPaceForRace } from "@/queries/session-pace";
+import { getAllSessionPaceForRace, getSessionWeatherForRace } from "@/queries/session-pace";
 import { getYearOverYearComparison } from "@/queries/comparison";
 import { buildPredictionReview } from "@/queries/prediction-review";
 import { RaceHeader } from "@/components/race-header";
@@ -15,6 +15,7 @@ import { CarPerformancePanel } from "@/components/car-performance-panel";
 import { getCarPerformance } from "@/queries/car-performance";
 import { SectionHeading } from "@/components/hud-panel";
 import { SessionTabBar } from "@/components/session-tab-bar";
+import { SessionWeatherChips } from "@/components/session-weather-chips";
 
 const SESSION_LABELS: Record<string, string> = {
   fp1: "FP1",
@@ -38,12 +39,13 @@ export default async function RacePage({
   const race = await getRaceByRoute(season, round);
   if (!race) notFound();
 
-  const [sessionPace, comparison, carPerformance, adjacentRaces, review] = await Promise.all([
+  const [sessionPace, comparison, carPerformance, adjacentRaces, review, weatherBySession] = await Promise.all([
     getAllSessionPaceForRace(race.id),
     getYearOverYearComparison(season, round),
     getCarPerformance(season, race.id),
     getAdjacentRaces(race.date),
     buildPredictionReview(race.id),
+    getSessionWeatherForRace(race.id),
   ]);
 
   const hasPracticeData = sessionPace.fp1 != null || sessionPace.fp2 != null || sessionPace.fp3 != null;
@@ -55,7 +57,7 @@ export default async function RacePage({
 
   return (
     <>
-      <SessionTabBar raceId={race.id} raceDateLabel={race.date} />
+      <SessionTabBar raceId={race.id} weatherBySession={weatherBySession} />
       <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <RaceHeader race={race} adjacentRaces={adjacentRaces} />
@@ -135,11 +137,10 @@ export default async function RacePage({
                   <span className="hud-mono text-[11px] uppercase tracking-wider text-[#8a91a3]">
                     Not run yet
                   </span>
-                  {withoutData.map((type) => (
-                    <span key={type} id={`session-${type}`} className="scroll-mt-24 text-sm font-semibold">
-                      {SESSION_LABELS[type]}
-                    </span>
-                  ))}
+                  <SessionWeatherChips
+                    raceId={race.id}
+                    sessions={withoutData.map((type) => ({ type, label: SESSION_LABELS[type] ?? type }))}
+                  />
                 </div>
               )}
             </>
