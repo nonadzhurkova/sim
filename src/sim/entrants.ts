@@ -9,6 +9,7 @@ import {
   raceResults,
   sessions,
   laps,
+  openf1SessionResults,
 } from "@/db/schema";
 import { eq, and, lt, or, desc } from "drizzle-orm";
 import { getDriverTeamsAsOf } from "@/queries/driver-teams";
@@ -499,10 +500,17 @@ export async function buildSimContext(
 }
 
 /**
- * Reconstructs qualifying order from the Q session's lap times: each driver's
- * fastest clean lap, ranked. Implausibly quick laps (broken timing records,
- * which do occur in the ingested data) are discarded against the session
- * median before ranking, the same guard the session-pace tables use.
+ * Reconstructs qualifying order for a race whose Q session has happened but
+ * whose classified results (qualifyingResults, from Jolpica) haven't been
+ * published yet -- Jolpica typically lags the session itself by hours.
+ *
+ * Prefers OpenF1's own classified session_result (openf1SessionResults),
+ * which is already correct across the Q1/Q2/Q3 knockout structure -- a
+ * driver eliminated in Q1 is ranked below Q3 participants even if their
+ * single fastest recorded lap happens to be quicker than some Q3 lap. Only
+ * falls back to ranking raw lap times (which gets exactly that case wrong)
+ * when OpenF1 itself has no session_result for this session either, e.g.
+ * older seasons where that endpoint has no data.
  */
 export async function deriveGridFromQualifyingLaps(raceId: number): Promise<Map<number, number>> {
   const [qSession] = await db
@@ -510,6 +518,14 @@ export async function deriveGridFromQualifyingLaps(raceId: number): Promise<Map<
     .from(sessions)
     .where(and(eq(sessions.raceId, raceId), eq(sessions.sessionType, "q")));
   if (!qSession) return new Map();
+
+  const officialResult = await db
+    .select({ driverId: openf1SessionResults.driverId, position: openf1SessionResults.position })
+    .from(openf1SessionResults)
+    .where(eq(openf1SessionResults.sessionId, qSession.id));
+  if (officialResult.length > 0) {
+    return new Map(officialResult.map((r) => [r.driverId, r.position]));
+  }
 
   const qLaps = await db
     .select({ driverId: laps.driverId, lapDuration: laps.lapDuration })

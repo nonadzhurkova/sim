@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import type { ProgressReporter } from "./progress";
-import { races, sessions, drivers, laps, stints } from "@/db/schema";
+import { races, sessions, drivers, laps, stints, openf1SessionResults } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 const BASE_URL = "https://api.openf1.org/v1";
@@ -36,6 +36,12 @@ type OpenF1Stint = {
 
 type OpenF1Weather = {
   rainfall: number;
+};
+
+type OpenF1SessionResult = {
+  position: number | null;
+  driver_number: number;
+  dns: boolean;
 };
 
 export const SESSION_TYPE_MAP: Record<string, "fp1" | "fp2" | "fp3" | "sprint_quali" | "sprint" | "q" | "r"> = {
@@ -186,6 +192,41 @@ async function ingestLaps(
     });
 }
 
+/**
+ * OpenF1's own classified result for a qualifying/sprint-qualifying session
+ * -- already correct across the Q1/Q2/Q3 knockout structure, unlike ranking
+ * raw lap times (see openf1SessionResults's doc comment in schema.ts). Used
+ * as the pre-race grid source for buildSimContext/xgboost-features while
+ * Jolpica's classified qualifying.json hasn't been published yet.
+ */
+async function ingestSessionResult(
+  dbSessionId: number,
+  openf1SessionKey: number,
+  driverNumberToId: Map<number, number>,
+) {
+  const results = await fetchJsonOptional<OpenF1SessionResult[]>(
+    `${BASE_URL}/session_result?session_key=${openf1SessionKey}`,
+  );
+  if (!results) return;
+
+  const rows = results
+    .filter((r) => r.position != null && !r.dns && driverNumberToId.has(r.driver_number))
+    .map((r) => ({
+      sessionId: dbSessionId,
+      driverId: driverNumberToId.get(r.driver_number)!,
+      position: r.position!,
+    }));
+  if (rows.length === 0) return;
+
+  await db
+    .insert(openf1SessionResults)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [openf1SessionResults.sessionId, openf1SessionResults.driverId],
+      set: { position: sql`excluded.position` },
+    });
+}
+
 async function ingestStints(
   dbSessionId: number,
   openf1SessionKey: number,
@@ -224,16 +265,23 @@ async function ingestStints(
 
 /**
  * A session is considered fully ingested if it already has both laps and
- * stints stored. The most recent race weekend is never skipped even if
- * "complete," since it may have been ingested mid-session before all laps
- * were available upstream.
+ * stints stored (plus, for qualifying/sprint-qualifying, OpenF1's own
+ * classified session_result -- see openf1SessionResults's doc comment). The
+ * most recent race weekend is never skipped even if "complete," since it may
+ * have been ingested mid-session before all laps were available upstream.
  */
-async function isSessionFullyIngested(dbSessionId: number): Promise<boolean> {
-  const [[{ lapCount }], [{ stintCount }]] = await Promise.all([
+async function isSessionFullyIngested(
+  dbSessionId: number,
+  sessionType: "fp1" | "fp2" | "fp3" | "sprint_quali" | "sprint" | "q" | "r",
+): Promise<boolean> {
+  const [[{ lapCount }], [{ stintCount }], [{ resultCount }]] = await Promise.all([
     db.select({ lapCount: sql<number>`count(*)` }).from(laps).where(eq(laps.sessionId, dbSessionId)),
     db.select({ stintCount: sql<number>`count(*)` }).from(stints).where(eq(stints.sessionId, dbSessionId)),
+    sessionType === "q" || sessionType === "sprint_quali"
+      ? db.select({ resultCount: sql<number>`count(*)` }).from(openf1SessionResults).where(eq(openf1SessionResults.sessionId, dbSessionId))
+      : Promise.resolve([{ resultCount: 1 }]),
   ]);
-  return Number(lapCount) > 0 && Number(stintCount) > 0;
+  return Number(lapCount) > 0 && Number(stintCount) > 0 && Number(resultCount) > 0;
 }
 
 export async function ingestSeasonSessions(season: number, onProgress?: ProgressReporter) {
@@ -282,7 +330,7 @@ export async function ingestSeasonSessions(season: number, onProgress?: Progress
     if (
       existing &&
       matchingRace.id !== latestRaceId &&
-      (await isSessionFullyIngested(existing.id))
+      (await isSessionFullyIngested(existing.id, sessionType))
     ) {
       skipped++;
       processed++;
@@ -311,6 +359,9 @@ export async function ingestSeasonSessions(season: number, onProgress?: Progress
 
       await ingestLaps(dbSessionId, s.session_key, driverNumberToId);
       await ingestStints(dbSessionId, s.session_key, driverNumberToId);
+      if (sessionType === "q" || sessionType === "sprint_quali") {
+        await ingestSessionResult(dbSessionId, s.session_key, driverNumberToId);
+      }
     } catch (err) {
       console.error(`[openf1] failed to ingest session ${s.session_key} (${s.circuit_short_name} ${s.session_name}), skipping:`, err instanceof Error ? err.message : err);
     }

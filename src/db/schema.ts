@@ -268,6 +268,31 @@ export const stints = pgTable(
   (t) => [unique().on(t.sessionId, t.driverId, t.stintNumber)],
 );
 
+/**
+ * OpenF1's own classified result for a session (from its /session_result
+ * endpoint) -- used for qualifying/sprint-qualifying sessions specifically
+ * as a pre-race grid source while Jolpica's classified qualifying.json
+ * hasn't been published yet (it typically lags OpenF1 by hours). Unlike
+ * reconstructing a grid from raw lap times, this is OpenF1's own official
+ * position, already correct across the Q1/Q2/Q3 knockout structure -- a
+ * driver eliminated in Q1 is correctly ranked below Q3 participants even
+ * though their fastest recorded lap might be quicker than some Q3 laps.
+ */
+export const openf1SessionResults = pgTable(
+  "openf1_session_results",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    driverId: integer("driver_id")
+      .notNull()
+      .references(() => drivers.id),
+    position: integer("position").notNull(),
+  },
+  (t) => [unique().on(t.sessionId, t.driverId)],
+);
+
 export const driverRatings = pgTable(
   "driver_ratings",
   {
