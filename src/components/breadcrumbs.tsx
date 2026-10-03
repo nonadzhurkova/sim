@@ -17,11 +17,11 @@ export function Breadcrumbs({ items }: { items: Breadcrumb[] }) {
           <span key={i} className="flex items-center gap-1.5">
             {i > 0 && <span className="text-slate-700">/</span>}
             {item.href && !isLast ? (
-              <Link href={item.href} className="text-cyan-500 hover:text-cyan-300">
+              <Link href={item.href} className="text-red-500 hover:text-red-300">
                 {item.label}
               </Link>
             ) : (
-              <span className={isLast ? "text-slate-400" : "text-cyan-500"}>{item.label}</span>
+              <span className={isLast ? "text-slate-400" : "text-red-500"}>{item.label}</span>
             )}
           </span>
         );

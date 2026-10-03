@@ -1,10 +1,90 @@
 import type { ReactNode } from "react";
 
 /**
- * Shared HUD-style panel: angular corner brackets, glowing cyan border,
- * dark translucent background. Wraps every card/table in the app so the
- * sci-fi dashboard aesthetic stays consistent without repeating the same
- * border/glow classes everywhere.
+ * Section eyebrow + large heading, used above a major block of the page
+ * (mirrors the treatment RaceHeader/RacePredictionPanel use for their own
+ * titles) so every section reads with the same visual weight.
+ */
+export function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <div>
+      <p className="hud-mono text-xs uppercase tracking-[0.16em] text-red-500">{eyebrow}</p>
+      <h2 className="font-heading mt-1.5 text-4xl font-extrabold uppercase leading-none text-[#f2f3f5]">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+const PODIUM_EDGE = ["#f3c13a", "#c9cfdb", "#e08a3c"];
+
+function pct(v: number): string {
+  if (v >= 0.995) return "100";
+  if (v > 0 && v < 0.001) return "<0.1";
+  return (v * 100).toFixed(1);
+}
+
+export type PodiumEntry = {
+  id: number;
+  name: string;
+  team: string | null;
+  winPct: number;
+};
+
+/**
+ * Top-3 as large editorial cards -- used wherever a win-probability call is
+ * the headline (race page's prediction panel, home page's next-race
+ * preview), so both read as the same design rather than two near-alike
+ * implementations drifting apart.
+ */
+export function PodiumCards({ entries, isLive = false }: { entries: PodiumEntry[]; isLive?: boolean }) {
+  const top3 = entries.slice(0, 3);
+  if (top3.length === 0) return null;
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {top3.map((d, i) => {
+        const edge = PODIUM_EDGE[i];
+        return (
+          <article
+            key={d.id}
+            className="relative overflow-hidden border border-[#262a35] bg-[#12141a] p-6"
+            style={{ borderTopWidth: 4, borderTopColor: edge }}
+          >
+            <div className="flex items-baseline gap-3">
+              <span className="font-heading text-2xl font-extrabold" style={{ color: edge }}>
+                P{i + 1}
+              </span>
+              <span className="hud-mono text-[11px] uppercase tracking-wider text-[#8a91a3]">
+                {d.team ?? "—"}
+              </span>
+            </div>
+            <div className="font-heading mt-2 text-3xl font-bold uppercase leading-tight text-[#f2f3f5]">
+              {d.name}
+            </div>
+            <div className="mt-5 flex items-baseline gap-1.5">
+              <span className="hud-mono text-5xl font-medium leading-none" style={{ color: i === 0 ? edge : "#f2f3f5" }}>
+                {pct(d.winPct)}
+              </span>
+              <span className="hud-mono text-xl text-[#a3a9b8]">%</span>
+              <span className="ml-2 text-sm text-[#a3a9b8]">win probability</span>
+            </div>
+            <div className="relative mt-4 h-1.5 bg-[#1e212b]">
+              <div
+                className={isLive ? "h-1.5 transition-[width] duration-200 ease-out" : "hud-bar-fill h-1.5"}
+                style={{ width: `${Math.max(d.winPct * 100, 2)}%`, backgroundColor: edge }}
+              />
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Shared panel: flat bordered card on the dark editorial theme. Wraps
+ * every card/table in the app so the border/background stays consistent
+ * without repeating the same classes everywhere.
  */
 export function HudPanel({
   title,
@@ -16,18 +96,10 @@ export function HudPanel({
   className?: string;
 }) {
   return (
-    <div
-      className={`relative border border-cyan-900/60 bg-[#0b1015]/80 shadow-[0_0_20px_-8px_rgba(34,211,238,0.35)] ${className}`}
-    >
-      {/* corner brackets */}
-      <span className="pointer-events-none absolute -left-px -top-px h-3 w-3 border-l-2 border-t-2 border-cyan-400" />
-      <span className="pointer-events-none absolute -right-px -top-px h-3 w-3 border-r-2 border-t-2 border-cyan-400" />
-      <span className="pointer-events-none absolute -bottom-px -left-px h-3 w-3 border-b-2 border-l-2 border-cyan-400" />
-      <span className="pointer-events-none absolute -bottom-px -right-px h-3 w-3 border-b-2 border-r-2 border-cyan-400" />
-
+    <div className={`border border-[#262a35] bg-[#12141a] ${className}`}>
       {title && (
-        <div className="border-b border-cyan-900/60 px-4 py-2">
-          <h3 className="hud-mono text-xs font-semibold uppercase tracking-widest text-cyan-400">
+        <div className="border-b border-[#262a35] px-4 py-3">
+          <h3 className="font-heading text-sm font-bold uppercase tracking-wide text-red-400">
             {title}
           </h3>
         </div>

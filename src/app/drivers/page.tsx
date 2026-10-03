@@ -7,6 +7,7 @@ import { getStandings } from "@/queries/standings";
 import { getLatestDriverRatingsForSeason } from "@/queries/driver-profile";
 import { TeamBadge } from "@/components/team-badge";
 import { getTeamColor } from "@/lib/team-colors";
+import { SectionHeading } from "@/components/hud-panel";
 
 function paceCell(value: number | null): string {
   if (value == null) return "—";
@@ -58,10 +59,7 @@ export default async function DriversPage() {
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-        {season} Season
-      </p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-100">Drivers</h1>
+      <SectionHeading eyebrow={`${season} Season`} title="Drivers" />
 
       <div className="mt-6 overflow-x-auto">
         <table className="w-full min-w-[860px] text-sm">
@@ -116,7 +114,7 @@ export default async function DriversPage() {
                             .toUpperCase()}
                         </div>
                       )}
-                      <span className="truncate font-semibold text-slate-100 group-hover:text-cyan-300">
+                      <span className="truncate font-semibold text-slate-100 group-hover:text-red-300">
                         {d.name}
                       </span>
                       {d.driverNumber != null && (
@@ -132,7 +130,7 @@ export default async function DriversPage() {
                       <span className="hud-mono truncate text-xs text-slate-400">{d.teamName}</span>
                     </span>
                   </td>
-                  <td className="hud-mono py-2 pr-3 text-right font-semibold text-cyan-300">{points}</td>
+                  <td className="hud-mono py-2 pr-3 text-right font-semibold text-red-300">{points}</td>
                   <td className={`hud-mono py-2 pr-3 text-right font-semibold ${paceColor(rating?.basePace ?? null)}`}>
                     {paceCell(rating?.basePace ?? null)}
                   </td>

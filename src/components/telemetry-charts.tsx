@@ -80,7 +80,7 @@ export function PhaseDeltaChart({
                   style={{
                     left: isLoss ? "50%" : `${50 - pct}%`,
                     width: `${pct}%`,
-                    backgroundColor: isLoss ? "#ef4444" : "#22c55e",
+                    backgroundColor: isLoss ? "#d40000" : "#22c55e",
                     opacity: 0.85,
                   }}
                 />
@@ -145,8 +145,8 @@ export function DeltaTraceChart({
       <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" preserveAspectRatio="none" height={H}>
         <defs>
           <linearGradient id="deltaFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.35" />
-            <stop offset="50%" stopColor="#ef4444" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#d40000" stopOpacity="0.35" />
+            <stop offset="50%" stopColor="#d40000" stopOpacity="0.05" />
             <stop offset="50%" stopColor="#22c55e" stopOpacity="0.05" />
             <stop offset="100%" stopColor="#22c55e" stopOpacity="0.35" />
           </linearGradient>
@@ -165,7 +165,7 @@ export function DeltaTraceChart({
         ))}
         <polygon points={area} fill="url(#deltaFill)" />
         <line x1={0} y1={y(0)} x2={W} y2={y(0)} stroke="#475569" strokeWidth="1" />
-        <polyline points={line} fill="none" stroke="#22d3ee" strokeWidth="2" />
+        <polyline points={line} fill="none" stroke="#d40000" strokeWidth="2" />
       </svg>
       <div className="hud-mono flex justify-between text-[9px] text-slate-600">
         <span>LAP START</span>
@@ -256,7 +256,7 @@ export function SectorBars({
                 className="hud-bar-fill w-10"
                 style={{
                   height: `${Math.max(height, 4)}%`,
-                  backgroundColor: isLoss ? "#ef4444" : "#22c55e",
+                  backgroundColor: isLoss ? "#d40000" : "#22c55e",
                   opacity: 0.85,
                 }}
               />
@@ -334,7 +334,7 @@ export function InputTraces({
             preserveAspectRatio="none"
             height={row.h}
           >
-            <rect x="0" y="0" width={W} height={row.h} fill="#0b1015" />
+            <rect x="0" y="0" width={W} height={row.h} fill="#12141a" />
             <polyline
               points={line(rival.points, row.pick, row.max, row.h)}
               fill="none"

@@ -53,7 +53,7 @@ function OddsRow({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 border-t border-slate-800/60 py-2.5 transition-colors hover:bg-cyan-950/20"
+      className="flex items-center gap-3 border-t border-slate-800/60 py-2.5 transition-colors hover:bg-red-950/20"
     >
       <span className={`hud-mono w-5 shrink-0 text-base font-bold ${medal}`}>{index + 1}</span>
       {headshotUrl ? (
@@ -119,7 +119,7 @@ function OddsRow({
       </div>
 
       <div className="flex w-16 shrink-0 items-center justify-end">
-        <span className="hud-mono text-base font-bold text-cyan-300">
+        <span className="hud-mono text-base font-bold text-red-300">
           <AnimatedNumber value={titlePct * 100} decimals={1} suffix="%" />
         </span>
       </div>
@@ -177,7 +177,7 @@ function RaceOutlookSummary({ projection }: { projection: SeasonProjection }) {
                       <span className="hud-mono w-5 shrink-0 text-xs text-slate-400">{i + 1}</span>
                       <span className="h-3 w-[3px] shrink-0" style={{ backgroundColor: driverColor }} />
                       <span className="flex-1 truncate text-sm text-slate-300">{c.driverName}</span>
-                      <span className="hud-mono shrink-0 text-sm text-cyan-300">{pct(c.winPct)}%</span>
+                      <span className="hud-mono shrink-0 text-sm text-red-300">{pct(c.winPct)}%</span>
                     </li>
                   );
                 })}
@@ -269,13 +269,13 @@ export function TitleOddsPanel({ season }: { season: number }) {
           <button
             onClick={run}
             disabled={state === "loading"}
-            className="hud-mono shrink-0 border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="hud-mono shrink-0 border border-red-500 bg-red-950/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-red-300 shadow-[0_0_12px_-2px_rgba(229,53,43,0.5)] transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {state === "loading" ? "Simulating..." : "Predict Champions"}
           </button>
         </div>
         {state === "loading" && (
-          <p className="hud-mono mt-3 text-xs text-cyan-400">
+          <p className="hud-mono mt-3 text-xs text-red-400">
             RUNNING THE REST OF THE SEASON<span className="hud-ellipsis" />
           </p>
         )}
@@ -307,14 +307,14 @@ export function TitleOddsPanel({ season }: { season: number }) {
                 .replace(/\B(?=(\d{3})+(?!\d))/g, ",")} simulated seasons from the standings after round ${projection.roundsScored}`}
         </p>
         {state === "loading" ? (
-          <span className="hud-mono text-[10px] uppercase tracking-wider text-cyan-400">
+          <span className="hud-mono text-[10px] uppercase tracking-wider text-red-400">
             {projection.iterations === 0 ? "loading races" : "converging"}
             <span className="hud-ellipsis" />
           </span>
         ) : (
           <button
             onClick={run}
-            className="hud-mono border border-slate-700 px-2 py-1 text-[9px] uppercase tracking-wider text-slate-400 transition-colors hover:border-cyan-600 hover:text-cyan-300"
+            className="hud-mono border border-slate-700 px-2 py-1 text-[9px] uppercase tracking-wider text-slate-400 transition-colors hover:border-red-600 hover:text-red-300"
           >
             Re-run
           </button>
@@ -323,7 +323,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
       {progress && (
         <div className="relative mt-2 h-1.5 overflow-hidden bg-slate-900/80">
           <div
-            className="hud-pulse h-full bg-cyan-400 shadow-[0_0_8px_0_rgba(34,211,238,0.7)] transition-[width] duration-200 ease-linear"
+            className="hud-pulse h-full bg-red-400 shadow-[0_0_8px_0_rgba(229,53,43,0.7)] transition-[width] duration-200 ease-linear"
             style={{ width: `${(progress.completed / progress.total) * 100}%` }}
           />
           {/* Sweeping highlight so the bar reads as actively working even in
@@ -350,7 +350,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
 
       <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-0">
         <div className="lg:pr-6">
-          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-cyan-400">
+          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-red-400">
             {"//"} Drivers&apos; Championship
           </p>
           <div className="mt-2">
@@ -373,7 +373,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
         </div>
 
         <div className="border-t border-slate-800 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-cyan-400">
+          <p className="hud-mono text-xs font-bold uppercase tracking-widest text-red-400">
             {"//"} Constructors&apos; Championship
           </p>
           <div className="mt-2">
@@ -403,7 +403,7 @@ export function TitleOddsPanel({ season }: { season: number }) {
         </p>
         <Link
           href="/standings"
-          className="hud-mono shrink-0 text-[10px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+          className="hud-mono shrink-0 text-[10px] uppercase tracking-wider text-red-500 hover:text-red-300"
         >
           Full standings →
         </Link>

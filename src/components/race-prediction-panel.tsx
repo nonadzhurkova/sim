@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getTeamColor } from "@/lib/team-colors";
-import { HudPanel } from "./hud-panel";
+import { HudPanel, SectionHeading, PodiumCards } from "./hud-panel";
 
 type SimSignals = {
   basePace: boolean;
@@ -78,12 +78,13 @@ function SignalDots({ signals }: { signals: SimSignals }) {
         <span
           key={key}
           title={`${label}: ${signals[key] ? "available" : "missing"}`}
-          className={`h-1.5 w-1.5 rounded-full ${signals[key] ? "bg-cyan-400" : "bg-slate-700"}`}
+          className={`h-1.5 w-1.5 rounded-full ${signals[key] ? "bg-red-400" : "bg-slate-700"}`}
         />
       ))}
     </span>
   );
 }
+
 
 /**
  * The production prediction panel: Monte Carlo blended with the XGBoost
@@ -164,6 +165,14 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
     }
   }
 
+  // Auto-run once the panel mounts, so a visitor sees the prediction without
+  // having to click first -- same request a manual "Run simulation" click
+  // would make, just fired immediately instead of waiting for input.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    run();
+  }, [raceId]);
+
   // While a run is in flight the table is driven by the latest streamed
   // snapshot, so the probabilities are visibly converging rather than the
   // panel sitting blank until the end.
@@ -173,64 +182,73 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
   const title = result && !result.hasRealGrid ? "Race Prediction (pre-qualifying)" : "Race Prediction";
 
   return (
-    <HudPanel title={title}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">
-            Iterations
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <SectionHeading
+          eyebrow="Race prediction"
+          title={title === "Race Prediction" ? "Who wins Sunday" : title}
+        />
+        <div className="flex flex-wrap items-center gap-3 border border-[#262a35] bg-[#12141a] p-2 pl-4">
+          <span className="hud-mono text-[11px] uppercase tracking-wider text-[#8a91a3]">
+            Simulations
           </span>
-          {ITERATION_OPTIONS.map((n) => (
-            <button
-              key={n}
-              onClick={() => setIterations(n)}
-              disabled={state === "loading"}
-              className={`hud-mono border px-2 py-1 text-[10px] tracking-wider transition-colors disabled:opacity-50 ${
-                iterations === n
-                  ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
-                  : "border-slate-800 text-slate-400 hover:border-slate-700"
-              }`}
-            >
-              {thousands(n)}
-            </button>
-          ))}
+          <div className="flex gap-1">
+            {ITERATION_OPTIONS.map((n) => (
+              <button
+                key={n}
+                onClick={() => setIterations(n)}
+                disabled={state === "loading"}
+                className={`hud-mono min-h-10 border-0 px-3 text-[13px] transition-colors disabled:opacity-50 ${
+                  iterations === n ? "bg-[#f2f3f5] text-[#0b0c10]" : "bg-[#1b1e27] text-[#a3a9b8]"
+                }`}
+              >
+                {thousands(n)}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={run}
+            disabled={state === "loading"}
+            className="font-heading min-h-10 border-0 bg-red-500 px-5 text-base font-bold uppercase tracking-wide text-white transition-[filter] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {state === "loading" ? "Simulating..." : state === "done" ? "Re-run" : "Run simulation"}
+          </button>
         </div>
-        <button
-          onClick={run}
-          disabled={state === "loading"}
-          className="hud-mono border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {state === "loading" ? "Simulating..." : state === "done" ? "Re-run" : "Run Simulation"}
-        </button>
       </div>
 
+      {(isLive || (state === "done" && result)) && (
+        <PodiumCards
+          entries={visible.map((d) => ({ id: d.driverId, name: d.driverName, team: d.teamName, winPct: d.winPct }))}
+          isLive={isLive}
+        />
+      )}
+
       {state === "idle" && (
-        <p className="hud-mono mt-3 text-[11px] leading-relaxed text-slate-400">
-          RUNS A MONTE CARLO SIMULATION OF THIS RACE FROM THE RATINGS COMPUTED
-          BEFORE IT, BLENDED WITH THE XGBOOST OVERLAY&apos;S OWN PREDICTION
-          WHEN A GRID EXISTS AND BOTH MODELS CAN SCORE IT. BEFORE QUALIFYING,
-          FALLS BACK TO PURE MONTE CARLO.
+        <p className="max-w-[760px] text-[15px] text-[#a3a9b8]">
+          Monte Carlo simulation from ratings computed before this race, blended with the XGBoost
+          overlay once a grid exists. Before qualifying it runs on pure Monte Carlo.
         </p>
       )}
 
-      {state === "loading" && (
-        <div className="mt-3">
+      {state === "loading" && liveDrivers.length === 0 && (
+        <div>
           <div className="flex items-baseline justify-between">
-            <p className="hud-mono text-xs text-cyan-400">
+            <p className="hud-mono text-xs text-red-400">
               SIMULATING<span className="hud-ellipsis" /> {progress
                 ? `${thousands(progress.completed)} / ${thousands(progress.total)}`
                 : thousands(iterations)}{" "}
               RACES
             </p>
-            <p className="hud-mono text-xs text-cyan-300">
+            <p className="hud-mono text-xs text-red-300">
               {progress && progress.total > 0
                 ? Math.round((progress.completed / progress.total) * 100)
                 : 0}
               %
             </p>
           </div>
-          <div className="relative mt-1.5 h-1.5 overflow-hidden bg-slate-900/80">
+          <div className="relative mt-1.5 h-1.5 overflow-hidden bg-[#1e212b]">
             <div
-              className="hud-pulse h-full bg-cyan-400 shadow-[0_0_10px_0_rgba(34,211,238,0.8)] transition-[width] duration-200 ease-linear"
+              className="hud-pulse h-full bg-red-400 shadow-[0_0_10px_0_rgba(229,53,43,0.8)] transition-[width] duration-200 ease-linear"
               style={{
                 width: `${progress && progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
               }}
@@ -241,27 +259,27 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
         </div>
       )}
 
-      {state === "error" && <p className="hud-mono mt-3 text-[11px] text-red-400">{error}</p>}
+      {state === "error" && <p className="hud-mono text-[13px] text-red-400">{error}</p>}
 
       {(isLive || (state === "done" && result)) && (
-        <>
+        <HudPanel title={isLive ? "Live estimate — converging" : "Full standings"}>
           {result && state === "done" ? (
             <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-slate-400">
               {thousands(result.iterations)} iterations ·{" "}
               {!result.hasRealGrid ? (
                 <span className="text-amber-400">grid simulated (no qualifying yet) · pure Monte Carlo</span>
               ) : result.gridIsProvisional ? (
-                <span className="text-cyan-500">
+                <span className="text-red-500">
                   grid from qualifying lap times (classified results pending — excludes penalties)
                 </span>
               ) : (
-                <span className="text-cyan-500">grid from real qualifying</span>
+                <span className="text-red-500">grid from real qualifying</span>
               )}
               {result.hasRealGrid && (
                 <>
                   {" · "}
                   {result.isBlended ? (
-                    <span className="text-cyan-500">blended with XGBoost</span>
+                    <span className="text-red-500">blended with XGBoost</span>
                   ) : (
                     <span className="text-amber-400">pure Monte Carlo (XGBoost unavailable for this race)</span>
                   )}
@@ -269,7 +287,7 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
               )}
             </p>
           ) : (
-            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-cyan-600">
+            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-red-600">
               live estimate — converging
             </p>
           )}
@@ -324,7 +342,7 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
                               }}
                             />
                           </div>
-                          <span className="hud-mono w-10 text-right text-cyan-300">
+                          <span className="hud-mono w-10 text-right text-red-300">
                             {pct(d.winPct)}%
                           </span>
                         </div>
@@ -360,7 +378,7 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
           {rows.length > INITIAL_ROW_COUNT && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-red-500 hover:text-red-300"
             >
               {showAll ? "Show less ▴" : `+${rows.length - INITIAL_ROW_COUNT} more ▾`}
             </button>
@@ -393,7 +411,7 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
                           <td className="hud-mono py-1.5 pr-3 text-right text-amber-300">
                             {d.xgbWinPct != null ? `${pct(d.xgbWinPct)}%` : "—"}
                           </td>
-                          <td className="hud-mono py-1.5 text-right text-cyan-300">{pct(d.winPct)}%</td>
+                          <td className="hud-mono py-1.5 text-right text-red-300">{pct(d.winPct)}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -402,8 +420,8 @@ export function RacePredictionPanel({ raceId }: { raceId: number }) {
               )}
             </div>
           )}
-        </>
+        </HudPanel>
       )}
-    </HudPanel>
+    </section>
   );
 }

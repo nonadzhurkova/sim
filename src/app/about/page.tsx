@@ -1,4 +1,4 @@
-import { HudPanel } from "@/components/hud-panel";
+import { HudPanel, SectionHeading } from "@/components/hud-panel";
 
 export const metadata = {
   title: "About",
@@ -13,10 +13,9 @@ const LINKS = [
 export default function AboutPage() {
   return (
     <main className="mx-auto max-w-[900px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Internal</p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-100">About</h1>
+      <SectionHeading eyebrow="Internal" title="About" />
 
-      <div className="mt-6">
+      <div className="mt-8">
         <HudPanel title="Nona Dzhurkova">
           <p className="text-sm leading-relaxed text-slate-300">
             Technical Manager of the Sitecore Team at Americaneagle.com, and a two-time Sitecore
@@ -36,7 +35,7 @@ export default function AboutPage() {
                 href={l.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hud-mono border border-cyan-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-400 transition-colors hover:border-cyan-500 hover:text-cyan-300"
+                className="hud-mono border border-red-700 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-red-400 transition-colors hover:border-red-500 hover:text-red-300"
               >
                 {l.label} →
               </a>

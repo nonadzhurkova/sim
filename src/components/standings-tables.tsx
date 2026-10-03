@@ -149,7 +149,7 @@ export function StandingsTables({
               onClick={() => setTab(t)}
               className={`hud-mono border px-3 py-1.5 text-[11px] uppercase tracking-widest transition-colors ${
                 tab === t
-                  ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
+                  ? "border-red-500 bg-red-950/60 text-red-300"
                   : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
@@ -203,7 +203,7 @@ export function StandingsTables({
                       {isDriver ? (
                         <Link
                           href={`/driver/${(row as DriverStanding).driverId}`}
-                          className="flex items-center gap-2 text-slate-100 hover:text-cyan-300"
+                          className="flex items-center gap-2 text-slate-100 hover:text-red-300"
                         >
                           {(row as DriverStanding).headshotUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -219,7 +219,7 @@ export function StandingsTables({
                       ) : (
                         <Link
                           href={`/team/${(row as TeamStanding).teamId}?season=${season}`}
-                          className="flex items-center gap-2 font-medium text-slate-100 hover:text-cyan-300"
+                          className="flex items-center gap-2 font-medium text-slate-100 hover:text-red-300"
                         >
                           <TeamBadge teamName={teamName} size={16} />
                           {teamName}
@@ -246,7 +246,7 @@ export function StandingsTables({
                     <td className="hud-mono py-2 pr-3 text-right text-slate-300">
                       {row.podiums || "—"}
                     </td>
-                    <td className="hud-mono py-2 pr-3 text-right text-base font-bold text-cyan-300">
+                    <td className="hud-mono py-2 pr-3 text-right text-base font-bold text-red-300">
                       {row.points}
                     </td>
                     <td className="py-2" style={{ minWidth: 140 }}>

@@ -2,6 +2,7 @@ import { getStandings } from "@/queries/standings";
 import { getLatestSeason, getAllSeasons, resolveSeasonParam } from "@/queries/races";
 import { StandingsTables } from "@/components/standings-tables";
 import { SeasonPicker } from "@/components/season-picker";
+import { SectionHeading } from "@/components/hud-panel";
 
 /**
  * Championship standings, with a season picker.
@@ -21,9 +22,8 @@ export default async function StandingsPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Championship</p>
-      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-bold text-slate-100">{season} Standings</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <SectionHeading eyebrow="Championship" title={`${season} Standings`} />
         <SeasonPicker basePath="/standings" seasons={seasons} activeSeason={season} />
       </div>
 

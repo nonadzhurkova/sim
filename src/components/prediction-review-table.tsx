@@ -62,7 +62,7 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
 function DriverLine({ row, accent }: { row: PredictionReviewRow; accent?: boolean }) {
   const color = getTeamColor(row.teamName);
   return (
-    <span className={`flex items-center gap-2 ${accent ? "font-semibold text-cyan-300" : "text-slate-200"}`}>
+    <span className={`flex items-center gap-2 ${accent ? "font-semibold text-red-300" : "text-slate-200"}`}>
       <span className="h-3 w-[3px] shrink-0" style={{ backgroundColor: color }} />
       {row.driverName}
     </span>
@@ -206,7 +206,7 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
 
       <HudPanel title={blended ? "Full field — race result vs. Blended vs. Monte Carlo vs. XGBoost" : "Full field — race result vs. predicted"}>
         {blended && (
-          <p className="hud-mono text-[10px] uppercase tracking-widest text-cyan-500">
+          <p className="hud-mono text-[10px] uppercase tracking-widest text-red-500">
             Blended is the production prediction (BLEND_ALPHA in params.ts). Monte Carlo and XGBoost below are each
             parent model&apos;s own standalone call.
           </p>
@@ -226,9 +226,9 @@ export function PredictionReviewTable({ review }: { review: PredictionReview }) 
                 <th className="py-1.5 pr-3 font-medium">Driver</th>
                 {blended && (
                   <>
-                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Blend #</th>
-                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Blend Win%</th>
-                    <th className="py-1.5 pr-3 font-medium text-right text-cyan-400">Closer</th>
+                    <th className="py-1.5 pr-3 font-medium text-right text-red-400">Blend #</th>
+                    <th className="py-1.5 pr-3 font-medium text-right text-red-400">Blend Win%</th>
+                    <th className="py-1.5 pr-3 font-medium text-right text-red-400">Closer</th>
                   </>
                 )}
                 <th className="py-1.5 pr-3 font-medium text-right">MC #</th>

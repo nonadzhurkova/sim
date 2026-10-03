@@ -1,4 +1,4 @@
-import { HudPanel } from "@/components/hud-panel";
+import { HudPanel, SectionHeading } from "@/components/hud-panel";
 
 export const metadata = {
   title: "The Story",
@@ -8,11 +8,10 @@ export const metadata = {
 export default function StoryPage() {
   return (
     <main className="mx-auto max-w-[900px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Internal</p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-100">The Story</h1>
-      <p className="hud-mono mt-1 text-xs text-slate-400">What this app actually predicts from, in plain language.</p>
+      <SectionHeading eyebrow="Internal" title="The Story" />
+      <p className="hud-mono mt-2 text-xs text-slate-400">What this app actually predicts from, in plain language.</p>
 
-      <div className="mt-6 flex flex-col gap-6">
+      <div className="mt-8 flex flex-col gap-6">
         <HudPanel title="Two models, blended into one prediction">
           <p className="text-sm leading-relaxed text-slate-300">
             Every race-day prediction here is a blend of two very different approaches.

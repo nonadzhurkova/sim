@@ -35,6 +35,12 @@ function formatLapTime(seconds: number): string {
   return `${minutes}:${rest}`;
 }
 
+/** Last name only -- fits the narrow column without truncating mid-word. */
+function lastName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] ?? name;
+}
+
 function StintDetail({ raceId, driverId }: { raceId: number; driverId: number }) {
   const [state, setState] = useState<"loading" | "done" | "error">("loading");
   const [stints, setStints] = useState<StintBreakdown[]>([]);
@@ -80,7 +86,7 @@ function StintDetail({ raceId, driverId }: { raceId: number; driverId: number })
               <td className="hud-mono py-1 pr-3 text-slate-300">{s.compound}</td>
               <td className="hud-mono py-1 pr-3 text-right text-slate-400">{s.lapCount}</td>
               <td className="hud-mono py-1 pr-3 text-right text-slate-300">{formatLapTime(s.avgLapTime)}</td>
-              <td className="hud-mono py-1 text-right text-cyan-300">{formatLapTime(s.bestLapTime)}</td>
+              <td className="hud-mono py-1 text-right text-red-300">{formatLapTime(s.bestLapTime)}</td>
             </tr>
           ))}
         </tbody>
@@ -165,15 +171,17 @@ export function PaceProjectionPanel({
   return (
     <HudPanel title={title}>
       <div className="flex items-center justify-between gap-3">
-        {state === "loading" && rows.length === 0 ? (
-          <p className="hud-mono text-xs text-slate-400">CALCULATING...</p>
-        ) : (
-          <span />
-        )}
+        <p className="hud-mono text-[11px] text-slate-400">
+          {state === "loading" && rows.length === 0
+            ? "CALCULATING..."
+            : state === "done" && rows.length > 0 && rows.length < LOW_FIELD_COVERAGE_THRESHOLD
+              ? `⚠ ONLY ${rows.length} DRIVER${rows.length === 1 ? "" : "S"} HAVE USABLE DATA — LOW CONFIDENCE`
+              : ""}
+        </p>
         <button
           onClick={load}
           disabled={state === "loading"}
-          className="hud-mono border border-cyan-500 bg-cyan-950/40 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="hud-mono shrink-0 border border-red-500 bg-red-950/40 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-red-300 shadow-[0_0_12px_-2px_rgba(212,0,0,0.5)] transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {state === "loading" ? "..." : "Recalculate"}
         </button>
@@ -185,19 +193,17 @@ export function PaceProjectionPanel({
         <p className="hud-mono mt-2 text-xs text-slate-400">{emptyMessage}</p>
       )}
 
-      {state === "done" && rows.length > 0 && rows.length < LOW_FIELD_COVERAGE_THRESHOLD && (
-        <p className="hud-mono mt-2 text-[11px] text-amber-400">
-          ⚠ ONLY {rows.length} DRIVER{rows.length === 1 ? "" : "S"} HAVE USABLE DATA THIS WEEKEND —
-          TREAT THESE NUMBERS AS LOW CONFIDENCE.
-        </p>
-      )}
-
       {state === "done" && rows.length > 0 && (
-        <div className="mt-4 flex flex-col gap-1.5">
+        <div className="mt-3 flex flex-col">
           {(showAll ? rows : rows.slice(0, INITIAL_ROW_COUNT)).map((r) => {
             const color = getTeamColor(r.teamName);
             const gap = r.relativePace - fastest;
-            const widthPct = Math.max(3, Math.min(100, (gap / scaleMax) * 100));
+            // Bar length tracks pace itself (leader = full bar), not the gap --
+            // a longer bar reading as "faster" is the intuitive direction;
+            // encoding the gap directly made the leader's bar a sliver and
+            // everyone else's fill most of the track, backwards from how a
+            // speed comparison should read.
+            const widthPct = Math.max(4, 100 - (gap / scaleMax) * 100);
             const isFastest = r.rank === 1;
             const isExpanded = expandedDriverId === r.driverId;
             const isLowConfidence = r.sampleSize != null && r.sampleSize < LOW_CONFIDENCE_SAMPLE_SIZE;
@@ -205,21 +211,21 @@ export function PaceProjectionPanel({
               <div key={r.driverId}>
                 <button
                   onClick={() => setExpandedDriverId(isExpanded ? null : r.driverId)}
-                  className="flex w-full items-center gap-3 text-left hover:bg-cyan-950/20"
+                  className="flex w-full items-center gap-2.5 border-t border-[#1b1e27] py-1.5 text-left first:border-t-0 hover:bg-red-950/20"
                 >
-                  <span className="hud-mono w-4 shrink-0 text-xs text-slate-600">
+                  <span className="hud-mono w-3 shrink-0 text-[10px] text-slate-600">
                     {isExpanded ? "▾" : "▸"}
                   </span>
-                  <div className="hud-mono w-6 shrink-0 text-right text-xs text-slate-400">{r.rank}</div>
-                  <div className="w-28 shrink-0 truncate text-sm text-slate-200">
-                    {r.driverName}
+                  <div className="hud-mono w-5 shrink-0 text-right text-xs text-slate-400">{r.rank}</div>
+                  <div className="w-24 shrink-0 truncate text-sm text-[#f2f3f5]">
+                    {lastName(r.driverName)}
                     {isLowConfidence && (
                       <span className="ml-1 text-amber-400" title="Low sample size — treat with caution">
                         ⚠
                       </span>
                     )}
                   </div>
-                  <div className="relative h-5 flex-1 overflow-hidden bg-slate-900/60">
+                  <div className="relative h-4 flex-1 overflow-hidden bg-[#1e212b]">
                     <div
                       className="hud-bar-fill h-full opacity-90"
                       style={{
@@ -232,13 +238,13 @@ export function PaceProjectionPanel({
                     />
                   </div>
                   <div
-                    className={`hud-mono w-16 shrink-0 text-right text-xs ${isFastest ? "text-cyan-300" : "text-slate-400"}`}
+                    className={`hud-mono w-14 shrink-0 text-right text-xs ${isFastest ? "text-red-300" : "text-slate-400"}`}
                   >
                     {isFastest ? "LEAD" : `+${gap.toFixed(3)}`}
                   </div>
                 </button>
                 {isExpanded && (
-                  <div className="ml-13 border-l border-cyan-900/60 pl-4">
+                  <div className="ml-11 border-l border-red-900/60 py-1 pl-4">
                     <StintDetail raceId={raceId} driverId={r.driverId} />
                   </div>
                 )}
@@ -248,7 +254,7 @@ export function PaceProjectionPanel({
           {rows.length > INITIAL_ROW_COUNT && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+              className="hud-mono mt-1 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-red-500 hover:text-red-300"
             >
               {showAll ? "Show less ▴" : `+${rows.length - INITIAL_ROW_COUNT} more ▾`}
             </button>

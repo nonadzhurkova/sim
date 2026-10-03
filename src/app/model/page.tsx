@@ -5,6 +5,8 @@ import { FreshnessBanner } from "@/components/freshness-banner";
 import { RatingsPanel } from "@/components/ratings-panel";
 import { PredictionPanel } from "@/components/prediction-panel";
 import { XgboostPredictionPanel } from "@/components/xgboost-prediction-panel";
+import { SectionHeading } from "@/components/hud-panel";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 /**
  * Developer/model-internals page, split out from the fan-facing home page —
@@ -46,38 +48,50 @@ export default async function ModelPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Internal</p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-100">Model</h1>
-      <p className="hud-mono mt-1 text-xs text-slate-400">
+      <Breadcrumbs
+        items={[
+          { label: "Home", href: "/" },
+          ...(raceParam && targetRound != null
+            ? [{ label: `${targetSeason} R${targetRound}`, href: `/race/${targetSeason}/${targetRound}` }]
+            : []),
+          { label: "Model" },
+        ]}
+      />
+      <div className="mt-4">
+        <SectionHeading eyebrow="Internal" title="Model" />
+      </div>
+      <p className="hud-mono mt-2 text-xs text-slate-400">
         Data freshness, imports, and the model&apos;s own driver/team ratings — not fan-facing, kept off the home
         page.
       </p>
 
-      <div className="mt-6">
+      <div className="mt-8">
         <FreshnessBanner season={season} />
       </div>
 
       {comparison ? (
-        <div className="mt-6">
-          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-            {"//"} Ratings — {targetSeason} R{String(targetRound).padStart(2, "0")}
-          </p>
+        <div className="mt-8">
+          <SectionHeading
+            eyebrow="Ratings"
+            title={`${targetSeason} R${String(targetRound).padStart(2, "0")}`}
+          />
           <div className="mt-4">
             <RatingsPanel snapshot={comparison.thisYear} />
           </div>
         </div>
       ) : (
-        <p className="hud-mono mt-6 text-xs text-slate-400">
+        <p className="hud-mono mt-8 text-xs text-slate-400">
           NO RATINGS AVAILABLE YET FOR THIS RACE.
         </p>
       )}
 
       {targetRaceId != null && (
-        <div className="mt-8">
-          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
-            {"//"} Parent models — {targetSeason} R{String(targetRound).padStart(2, "0")}
-          </p>
-          <p className="hud-mono mt-1 text-[11px] text-slate-400">
+        <div className="mt-10">
+          <SectionHeading
+            eyebrow="Parent models"
+            title={`${targetSeason} R${String(targetRound).padStart(2, "0")}`}
+          />
+          <p className="hud-mono mt-2 text-[11px] text-slate-400">
             The production race page shows the blended prediction (BLEND_ALPHA in src/sim/params.ts). These are each
             parent model&apos;s own standalone output, for diagnosing where they agree or disagree.
           </p>

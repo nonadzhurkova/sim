@@ -19,7 +19,7 @@ function LapStat({
       <span className="hud-mono text-[10px] uppercase tracking-widest text-slate-400">{label}</span>
       {pace ? (
         <div className="flex items-baseline gap-2">
-          <span className="hud-mono text-lg font-bold text-cyan-300">{formatLapTime(pace.bestLap)}</span>
+          <span className="hud-mono text-lg font-bold text-red-300">{formatLapTime(pace.bestLap)}</span>
           <span className="text-sm text-slate-400">{pace.driverName}</span>
         </div>
       ) : (
@@ -54,7 +54,7 @@ export function FastestLapBanner({
   if (!fastestThisWeekend && !lastYearRace && !lastYearQuali) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border border-cyan-500/40 bg-cyan-950/20 px-4 py-3 shadow-[0_0_15px_-5px_rgba(34,211,238,0.4)]">
+    <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border border-red-500/40 bg-red-950/20 px-4 py-3 shadow-[0_0_15px_-5px_rgba(229,53,43,0.4)]">
       <LapStat label="Fastest This Weekend" pace={fastestThisWeekend} />
       <LapStat label="Last Year — Race" pace={lastYearRace} />
       <LapStat label="Last Year — Qualifying" pace={lastYearQuali} />

@@ -88,14 +88,14 @@ export function ImportButton({ season }: { season: number }) {
       <button
         onClick={handleClick}
         disabled={state === "loading"}
-        className="hud-mono relative border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="hud-mono relative border border-red-500 bg-red-950/40 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-red-300 shadow-[0_0_12px_-2px_rgba(229,53,43,0.5)] transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {state === "loading" ? "Importing..." : "Import Latest Data"}
       </button>
 
       {state === "loading" && (
         <div className="flex max-w-xs flex-col items-end gap-0.5 text-right">
-          <p className="hud-mono text-[11px] text-cyan-400">
+          <p className="hud-mono text-[11px] text-red-400">
             {phase ? phase.label : "Starting"}
             <span className="hud-ellipsis" />
           </p>
@@ -103,7 +103,7 @@ export function ImportButton({ season }: { season: number }) {
             <p className="hud-mono truncate text-[10px] text-slate-400">{message}</p>
           )}
           <div className="relative mt-0.5 h-1 w-40 overflow-hidden bg-slate-900/80">
-            <div className="hud-pulse h-full w-full bg-cyan-400 shadow-[0_0_8px_0_rgba(34,211,238,0.7)]" />
+            <div className="hud-pulse h-full w-full bg-red-400 shadow-[0_0_8px_0_rgba(229,53,43,0.7)]" />
             <div className="hud-scan pointer-events-none absolute inset-y-0 w-1/3" />
           </div>
         </div>

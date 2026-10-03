@@ -105,8 +105,10 @@ export default async function TeamPage({
       >
         <TeamBadge teamName={team.name} size={40} />
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-slate-100">{team.name}</h1>
-          <p className="hud-mono mt-0.5 text-[11px] text-slate-400">
+          <h1 className="font-heading text-4xl font-extrabold uppercase leading-none text-[#f2f3f5]">
+            {team.name}
+          </h1>
+          <p className="hud-mono mt-1.5 text-[11px] text-slate-400">
             {season}
             {team.engineSupplier ? ` · ${team.engineSupplier} power` : ""}
             {standing ? ` · P${standing.position} in the championship` : ""}
@@ -142,7 +144,7 @@ export default async function TeamPage({
       )}
 
       <div className="mt-6">
-        <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">{"//"} Drivers</p>
+        <p className="hud-mono text-xs uppercase tracking-widest text-red-500">{"//"} Drivers</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {teamDrivers.map((d) => (
             <Link
@@ -165,7 +167,7 @@ export default async function TeamPage({
                   {d.races} races · best P{d.bestFinish ?? "—"}
                 </div>
               </div>
-              <div className="hud-mono text-xl font-bold text-cyan-300">{d.points}</div>
+              <div className="hud-mono text-xl font-bold text-red-300">{d.points}</div>
             </Link>
           ))}
         </div>
@@ -189,7 +191,7 @@ export default async function TeamPage({
                 {results.map((r) => (
                   <tr key={`${r.raceId}-${r.driverId}`} className="border-t border-slate-800/60">
                     <td className="hud-mono py-1.5 pr-3 text-slate-400">
-                      <Link href={`/race/${season}/${r.round}`} className="hover:text-cyan-300">
+                      <Link href={`/race/${season}/${r.round}`} className="hover:text-red-300">
                         R{r.round}
                       </Link>
                     </td>
@@ -215,7 +217,7 @@ export default async function TeamPage({
                         ? r.status?.toUpperCase()
                         : (r.finishPosition ?? "—")}
                     </td>
-                    <td className="hud-mono py-1.5 text-right text-cyan-300">
+                    <td className="hud-mono py-1.5 text-right text-red-300">
                       {r.status === "finished" ? pointsForPosition(r.finishPosition) || "—" : "—"}
                     </td>
                   </tr>

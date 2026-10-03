@@ -38,7 +38,7 @@ function ResultsTable({ rows, showSeason }: { rows: DriverRaceRow[]; showSeason?
               <td className="hud-mono py-1.5 pr-3 text-slate-400">
                 <Link
                   href={`/race/${r.season}/${r.round}`}
-                  className="hover:text-cyan-300"
+                  className="hover:text-red-300"
                 >
                   {showSeason ? `${r.season} R${r.round}` : `R${r.round}`}
                 </Link>
@@ -144,7 +144,9 @@ export function DriverProfilePanel({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-2xl font-bold text-slate-100">{profile.name}</h1>
+            <h1 className="font-heading text-4xl font-extrabold uppercase leading-none text-[#f2f3f5]">
+              {profile.name}
+            </h1>
             {profile.driverNumber != null && (
               <span className="hud-mono text-xl font-bold" style={{ color: accent }}>
                 #{profile.driverNumber}
@@ -166,7 +168,7 @@ export function DriverProfilePanel({
       {/* current-season headline numbers */}
       {current && (
         <div>
-          <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+          <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
             {"//"} {current.season} season
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9">
@@ -259,7 +261,7 @@ export function DriverProfilePanel({
                     <td className="hud-mono py-1.5 pr-3 text-right text-slate-200">
                       {s.podiums || "—"}
                     </td>
-                    <td className="hud-mono py-1.5 pr-3 text-right font-semibold text-cyan-300">
+                    <td className="hud-mono py-1.5 pr-3 text-right font-semibold text-red-300">
                       {s.points || "—"}
                     </td>
                     <td className="hud-mono py-1.5 pr-3 text-right text-green-400">

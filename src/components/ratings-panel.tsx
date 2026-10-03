@@ -31,7 +31,7 @@ export function RatingsPanel({ snapshot }: { snapshot: RaceWeekendSnapshot }) {
                 <span className="text-slate-600">{i + 1}</span>
                 <span className="text-slate-200">{d.driverName}</span>
               </span>
-              <span className={d.basePace != null && d.basePace < 0 ? "text-cyan-300" : "text-slate-400"}>
+              <span className={d.basePace != null && d.basePace < 0 ? "text-red-300" : "text-slate-400"}>
                 {d.basePace != null ? d.basePace.toFixed(3) : "—"}
               </span>
             </li>
@@ -50,7 +50,7 @@ export function RatingsPanel({ snapshot }: { snapshot: RaceWeekendSnapshot }) {
                 <span className="text-slate-600">{i + 1}</span>
                 <span className="text-slate-200">{t.teamName}</span>
               </span>
-              <span className={t.carStrength != null && t.carStrength < 0 ? "text-cyan-300" : "text-slate-400"}>
+              <span className={t.carStrength != null && t.carStrength < 0 ? "text-red-300" : "text-slate-400"}>
                 {t.carStrength != null ? t.carStrength.toFixed(3) : "—"}
               </span>
             </li>

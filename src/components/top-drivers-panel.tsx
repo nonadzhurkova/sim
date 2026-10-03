@@ -23,7 +23,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
                 <li key={d.driverId}>
                   <Link
                     href={`/driver/${d.driverId}`}
-                    className="flex items-center gap-3 border-t border-slate-800/60 py-2 transition-colors hover:bg-cyan-950/20 first:border-t-0"
+                    className="flex items-center gap-3 border-t border-slate-800/60 py-2 transition-colors hover:bg-red-950/20 first:border-t-0"
                   >
                     <span className={`hud-mono w-5 shrink-0 text-base font-bold ${MEDAL_COLORS[i] ?? "text-slate-400"}`}>
                       {i + 1}
@@ -52,7 +52,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="truncate text-sm font-medium text-slate-100">{d.driverName}</span>
-                        <span className="hud-mono shrink-0 text-sm font-bold text-cyan-300">{d.points}</span>
+                        <span className="hud-mono shrink-0 text-sm font-bold text-red-300">{d.points}</span>
                       </div>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="hud-mono truncate text-[10px] text-slate-400">{d.teamName}</span>
@@ -71,7 +71,7 @@ export function TopDriversPanel({ drivers, season }: { drivers: DriverStanding[]
           </ul>
           <Link
             href={`/standings?season=${season}`}
-            className="hud-mono mt-2 block w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+            className="hud-mono mt-2 block w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-red-500 hover:text-red-300"
           >
             Full standings →
           </Link>

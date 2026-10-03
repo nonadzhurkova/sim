@@ -2,6 +2,7 @@ import { getLatestSeason, getAllSeasons, resolveSeasonParam, listRacesForSeason 
 import { getCurrentRace } from "@/queries/current-race";
 import { RaceList } from "@/components/race-list";
 import { SeasonPicker } from "@/components/season-picker";
+import { SectionHeading } from "@/components/hud-panel";
 
 /**
  * Full season calendar as its own page — previously the only way to reach
@@ -25,9 +26,8 @@ export default async function RacesPage({
 
   return (
     <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-10">
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">Schedule</p>
-      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-bold text-slate-100">{season} Races</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <SectionHeading eyebrow="Schedule" title={`${season} Races`} />
         <SeasonPicker basePath="/races" seasons={seasons} activeSeason={season} />
       </div>
 

@@ -18,15 +18,15 @@ function RaceCard({
       href={`/race/${race.season}/${race.round}`}
       className={`group relative flex flex-col gap-2 overflow-hidden border px-3 py-3 transition-colors ${
         isCurrent
-          ? "border-cyan-500/70 bg-cyan-950/30 shadow-[0_0_14px_-4px_rgba(34,211,238,0.5)]"
+          ? "border-red-500/70 bg-red-950/30 shadow-[0_0_14px_-4px_rgba(229,53,43,0.5)]"
           : isPast
             ? "border-slate-900 bg-slate-950/20 opacity-50 hover:opacity-90"
-            : "border-slate-800/80 bg-slate-950/40 hover:border-cyan-800/70 hover:bg-cyan-950/10"
+            : "border-slate-800/80 bg-slate-950/40 hover:border-red-800/70 hover:bg-red-950/10"
       }`}
     >
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5">
-          <span className={`hud-mono text-[11px] ${isPast && !isCurrent ? "text-slate-600" : "text-cyan-600"}`}>
+          <span className={`hud-mono text-[11px] ${isPast && !isCurrent ? "text-slate-600" : "text-red-600"}`}>
             R{String(race.round).padStart(2, "0")}
           </span>
           {race.isSprintWeekend && (
@@ -36,7 +36,7 @@ function RaceCard({
           )}
         </span>
         {isCurrent && (
-          <span className="hud-mono text-[10px] uppercase tracking-wider text-cyan-400">● live</span>
+          <span className="hud-mono text-[10px] uppercase tracking-wider text-red-400">● live</span>
         )}
       </div>
 
@@ -53,7 +53,7 @@ function RaceCard({
           <span className="h-6 w-9 shrink-0 rounded-sm border border-slate-800 bg-slate-900" />
         )}
         <span
-          className={`truncate text-sm leading-tight ${isCurrent ? "font-semibold text-cyan-300" : isPast ? "text-slate-400" : "text-slate-200"}`}
+          className={`truncate text-sm leading-tight ${isCurrent ? "font-semibold text-red-300" : isPast ? "text-slate-400" : "text-slate-200"}`}
           title={race.circuitName}
         >
           {race.circuitName}

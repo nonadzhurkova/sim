@@ -72,7 +72,7 @@ function SignalDots({ signals }: { signals: SimSignals }) {
         <span
           key={key}
           title={`${label}: ${signals[key] ? "available" : "missing"}`}
-          className={`h-1.5 w-1.5 rounded-full ${signals[key] ? "bg-cyan-400" : "bg-slate-700"}`}
+          className={`h-1.5 w-1.5 rounded-full ${signals[key] ? "bg-red-400" : "bg-slate-700"}`}
         />
       ))}
     </span>
@@ -161,7 +161,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
               disabled={state === "loading"}
               className={`hud-mono border px-2 py-1 text-[10px] tracking-wider transition-colors disabled:opacity-50 ${
                 iterations === n
-                  ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
+                  ? "border-red-500 bg-red-950/60 text-red-300"
                   : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
@@ -172,7 +172,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
         <button
           onClick={run}
           disabled={state === "loading"}
-          className="hud-mono border border-cyan-500 bg-cyan-950/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-cyan-300 shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors hover:bg-cyan-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="hud-mono border border-red-500 bg-red-950/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-red-300 shadow-[0_0_12px_-2px_rgba(229,53,43,0.5)] transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {state === "loading" ? "Simulating..." : state === "done" ? "Re-run" : "Run Simulation"}
         </button>
@@ -190,13 +190,13 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
       {state === "loading" && (
         <div className="mt-3">
           <div className="flex items-baseline justify-between">
-            <p className="hud-mono text-xs text-cyan-400">
+            <p className="hud-mono text-xs text-red-400">
               SIMULATING<span className="hud-ellipsis" /> {progress
                 ? `${thousands(progress.completed)} / ${thousands(progress.total)}`
                 : thousands(iterations)}{" "}
               RACES
             </p>
-            <p className="hud-mono text-xs text-cyan-300">
+            <p className="hud-mono text-xs text-red-300">
               {progress && progress.total > 0
                 ? Math.round((progress.completed / progress.total) * 100)
                 : 0}
@@ -205,7 +205,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           </div>
           <div className="relative mt-1.5 h-1.5 overflow-hidden bg-slate-900/80">
             <div
-              className="hud-pulse h-full bg-cyan-400 shadow-[0_0_10px_0_rgba(34,211,238,0.8)] transition-[width] duration-200 ease-linear"
+              className="hud-pulse h-full bg-red-400 shadow-[0_0_10px_0_rgba(229,53,43,0.8)] transition-[width] duration-200 ease-linear"
               style={{
                 width: `${progress && progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
               }}
@@ -226,15 +226,15 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
               {!result.hasRealGrid ? (
                 <span className="text-amber-400">grid simulated (no qualifying yet)</span>
               ) : result.gridIsProvisional ? (
-                <span className="text-cyan-500">
+                <span className="text-red-500">
                   grid from qualifying lap times (classified results pending — excludes penalties)
                 </span>
               ) : (
-                <span className="text-cyan-500">grid from real qualifying</span>
+                <span className="text-red-500">grid from real qualifying</span>
               )}
             </p>
           ) : (
-            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-cyan-600">
+            <p className="hud-mono mt-3 text-[10px] uppercase tracking-wider text-red-600">
               live estimate — converging
             </p>
           )}
@@ -289,7 +289,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
                               }}
                             />
                           </div>
-                          <span className="hud-mono w-10 text-right text-cyan-300">
+                          <span className="hud-mono w-10 text-right text-red-300">
                             {pct(d.winPct)}%
                           </span>
                         </div>
@@ -325,7 +325,7 @@ export function PredictionPanel({ raceId }: { raceId: number }) {
           {rows.length > INITIAL_ROW_COUNT && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+              className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-red-500 hover:text-red-300"
             >
               {showAll ? "Show less ▴" : `+${rows.length - INITIAL_ROW_COUNT} more ▾`}
             </button>

@@ -66,7 +66,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
                     <Link
                       href={`/driver/${r.driverId}`}
                       className={`hover:underline ${
-                        isLeader ? "font-semibold text-cyan-300" : "text-slate-200"
+                        isLeader ? "font-semibold text-red-300" : "text-slate-200"
                       }`}
                       title={`${r.driverName} · ${r.teamName ?? "Unknown team"} · ${formatLapTime(r.bestLap)}`}
                     >
@@ -75,7 +75,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
                   </span>
                 </td>
                 <td
-                  className={`hud-mono py-1.5 text-right ${isLeader ? "text-cyan-300" : "text-slate-400"}`}
+                  className={`hud-mono py-1.5 text-right ${isLeader ? "text-red-300" : "text-slate-400"}`}
                 >
                   {isLeader ? formatLapTime(r.bestLap) : `+${r.gapToFastest.toFixed(3)}`}
                 </td>
@@ -87,7 +87,7 @@ export function SessionPaceTable({ title, rows }: { title: string; rows: DriverS
       {rows.length > INITIAL_ROW_COUNT && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-cyan-500 hover:text-cyan-300"
+          className="hud-mono mt-2 w-full border-t border-slate-800/80 pt-2 text-center text-[11px] uppercase tracking-wider text-red-500 hover:text-red-300"
         >
           {expanded ? "Show less ▴" : `+${hiddenCount} more ▾`}
         </button>

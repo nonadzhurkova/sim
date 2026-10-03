@@ -15,19 +15,23 @@ export async function NavBar() {
   const currentRace = await getCurrentRace(season);
 
   return (
-    <header className="border-b border-cyan-900/60 bg-[#05070a]/90 backdrop-blur">
-      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-y-2 px-6 py-3 lg:px-10">
-        <Link href="/" className="hud-mono text-sm font-bold tracking-widest text-cyan-400">
-          F1// PREDICTOR
+    <header className="border-b border-[#1e212b] bg-[#0b0c10]">
+      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-y-3 px-6 py-3 lg:px-10">
+        <Link
+          href="/"
+          className="font-heading flex items-center gap-2.5 text-xl font-extrabold uppercase tracking-wide text-[#f2f3f5]"
+        >
+          <span className="inline-block h-3.5 w-3.5 -skew-x-[14deg] bg-red-500" />
+          F1 Predictor
         </Link>
-        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs uppercase tracking-wider text-slate-400">
+        <nav className="flex flex-wrap items-center gap-x-7 gap-y-2 text-sm font-medium">
           <NavLinks />
           {currentRace && (
             <Link
               href={`/race/${currentRace.season}/${currentRace.round}`}
-              className="hud-mono border border-cyan-700/70 bg-cyan-950/30 px-2.5 py-1 text-[11px] text-cyan-300 transition-colors hover:border-cyan-500 hover:bg-cyan-950/50"
+              className="font-heading bg-red-500 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-white transition-[filter] hover:brightness-110"
             >
-              Next Race →
+              Next race
             </Link>
           )}
         </nav>

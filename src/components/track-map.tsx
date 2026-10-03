@@ -91,7 +91,7 @@ export function TrackMap({
               onClick={() => setView(m)}
               className={`hud-mono border px-2 py-0.5 text-[9px] uppercase tracking-wider transition-colors ${
                 view === m
-                  ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
+                  ? "border-red-500 bg-red-950/60 text-red-300"
                   : "border-slate-800 text-slate-400 hover:border-slate-700"
               }`}
             >
@@ -143,7 +143,7 @@ export function TrackMap({
           S/F
         </text>
         {hover && (
-          <circle cx={sx(hover.x)} cy={sy(hover.y)} r="9" fill="none" stroke="#22d3ee" strokeWidth="2" />
+          <circle cx={sx(hover.x)} cy={sy(hover.y)} r="9" fill="none" stroke="#d40000" strokeWidth="2" />
         )}
       </svg>
 
@@ -160,7 +160,7 @@ export function TrackMap({
           </span>
         )}
         {hover && (
-          <span className="text-cyan-300">
+          <span className="text-red-300">
             {(hover.progress * 100).toFixed(0)}% · {hover.speed} km/h ·{" "}
             {hover.delta >= 0 ? "+" : ""}
             {hover.delta.toFixed(3)}s · {hover.phase}

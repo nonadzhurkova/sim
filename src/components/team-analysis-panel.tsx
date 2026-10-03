@@ -191,7 +191,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
         <button
           onClick={analyse}
           disabled={state === "loading"}
-          className="hud-mono shrink-0 border px-4 py-2 text-[11px] font-semibold uppercase tracking-widest shadow-[0_0_12px_-2px_rgba(34,211,238,0.5)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="hud-mono shrink-0 border px-4 py-2 text-[11px] font-semibold uppercase tracking-widest shadow-[0_0_12px_-2px_rgba(229,53,43,0.5)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           style={{ borderColor: accent, color: accent }}
         >
           {state === "loading" ? "Analysing..." : state === "done" ? "Refresh" : "Run Analysis"}
@@ -199,7 +199,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
       </div>
 
       {state === "loading" && (
-        <p className="hud-mono mt-3 text-xs text-cyan-400">
+        <p className="hud-mono mt-3 text-xs text-red-400">
           FETCHING SESSION TIMING<span className="hud-ellipsis" />
         </p>
       )}
@@ -226,7 +226,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                   }}
                   className={`hud-mono border px-3 py-1 text-[10px] uppercase tracking-widest transition-colors ${
                     activeSession === s.sessionType
-                      ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
+                      ? "border-red-500 bg-red-950/60 text-red-300"
                       : "border-slate-800 text-slate-400 hover:border-slate-700"
                   }`}
                 >
@@ -252,7 +252,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                         {d.acronym}{" "}
                         <span className="hud-mono text-[10px] text-slate-400">P{d.rank}</span>
                       </div>
-                      <div className="hud-mono text-[11px] text-cyan-300">{fmt(d.bestLap)}</div>
+                      <div className="hud-mono text-[11px] text-red-300">{fmt(d.bestLap)}</div>
                     </div>
                     <div className="hud-mono border-l border-slate-800 pl-3 text-[10px] text-slate-400">
                       <div>TRAP {d.speedTrap ?? "—"} km/h</div>
@@ -275,7 +275,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                   front and has almost no cars ahead to compare against. */}
               {session.fieldRankings.length > 0 && (
                 <div className="mt-6">
-                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
                     {"//"} Field ranking — where {team} stands on each measure
                   </p>
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -304,7 +304,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                           {/* position of the team within the field's range */}
                           <div className="relative mt-2 h-1.5 bg-slate-800">
                             <div
-                              className="absolute top-0 h-full bg-cyan-500"
+                              className="absolute top-0 h-full bg-red-500"
                               style={{
                                 width: `${
                                   r.teamRank != null
@@ -344,7 +344,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                   to each. Shows what was theoretically on the table. */}
               {session.idealLap.length > 0 && (
                 <div className="mt-6">
-                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
                     {"//"} Field ideal lap
                   </p>
                   <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -356,7 +356,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                         <div className="hud-mono text-[10px] uppercase tracking-wider text-slate-400">
                           Sector {s.sector}
                         </div>
-                        <div className="hud-mono mt-1 text-sm text-cyan-300">
+                        <div className="hud-mono mt-1 text-sm text-red-300">
                           {s.time.toFixed(3)}
                         </div>
                         <div className="hud-mono text-[9px] text-slate-600">{s.driver}</div>
@@ -378,7 +378,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
               {/* Team-mate head to head. */}
               {session.teammateComparison && (
                 <div className="mt-6">
-                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
                     {"//"} Team-mates
                   </p>
                   <div className="mt-3 border border-slate-800/80 px-3 py-3">
@@ -411,7 +411,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
 
               {session.leadDriver && comparableRivals.length > 0 && (
                 <div className="mt-6">
-                  <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+                  <p className="hud-mono text-xs uppercase tracking-widest text-red-500">
                     {"//"} {session.leadDriver.acronym} head to head
                   </p>
                   <div className="mt-3 flex flex-col gap-3">
@@ -458,7 +458,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                                         c.rival.driverNumber,
                                       )
                                 }
-                                className="hud-mono border border-cyan-800 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-400 hover:border-cyan-500 hover:text-cyan-300"
+                                className="hud-mono border border-red-800 px-2 py-1 text-[10px] uppercase tracking-wider text-red-400 hover:border-red-500 hover:text-red-300"
                               >
                                 {isOpen ? "Hide ▴" : "Telemetry ▾"}
                               </button>
@@ -472,7 +472,7 @@ export function TeamAnalysisPanel({ raceId, team }: { raceId: number; team: stri
                           {isOpen && (
                             <div className="border-t border-slate-800/80 px-3 py-4">
                               {lapState === "loading" && (
-                                <p className="hud-mono text-xs text-cyan-400">
+                                <p className="hud-mono text-xs text-red-400">
                                   PULLING FULL-RATE TELEMETRY<span className="hud-ellipsis" />
                                 </p>
                               )}

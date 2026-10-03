@@ -27,7 +27,11 @@ export function NavLinks() {
         // stays highlighted while viewing "/driver/44".
         const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
         return (
-          <Link key={href} href={href} className={isActive ? "text-cyan-300" : "hover:text-cyan-300"}>
+          <Link
+            key={href}
+            href={href}
+            className={isActive ? "text-[#f2f3f5]" : "text-[#a3a9b8] hover:text-[#f2f3f5]"}
+          >
             {label}
           </Link>
         );

@@ -13,7 +13,7 @@ function AdjacentRaceLink({ race, direction }: { race: AdjacentRace | null; dire
     <Link
       href={`/race/${race.season}/${race.round}`}
       title={race.circuitName}
-      className={`hud-mono flex shrink-0 items-center gap-1 text-xs text-slate-400 transition-colors hover:text-cyan-300 ${
+      className={`hud-mono flex shrink-0 items-center gap-1 text-xs text-slate-400 transition-colors hover:text-red-300 ${
         direction === "previous" ? "flex-row" : "flex-row-reverse"
       }`}
     >
@@ -33,17 +33,19 @@ export function RaceHeader({
   return (
     <div>
       {adjacentRaces && (
-        <div className="mb-1.5 flex items-center gap-3">
+        <div className="mb-2 flex items-center gap-3">
           <AdjacentRaceLink race={adjacentRaces.previous} direction="previous" />
           <span className="text-slate-800">|</span>
           <AdjacentRaceLink race={adjacentRaces.next} direction="next" />
         </div>
       )}
-      <p className="hud-mono text-xs uppercase tracking-widest text-cyan-500">
+      <p className="hud-mono text-xs uppercase tracking-[0.14em] text-red-500">
         {race.season} {"//"} Round {String(race.round).padStart(2, "0")}
       </p>
-      <h1 className="mt-1 text-2xl font-bold text-slate-100">{race.circuitName}</h1>
-      <p className="hud-mono mt-1 text-xs text-slate-400">
+      <h1 className="font-heading mt-2 text-4xl font-extrabold uppercase leading-[0.95] tracking-tight text-[#f2f3f5] sm:text-6xl">
+        {race.circuitName}
+      </h1>
+      <p className="mt-2 text-base text-[#a3a9b8]">
         {race.country} • {race.date}
       </p>
     </div>

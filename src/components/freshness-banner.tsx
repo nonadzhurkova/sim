@@ -52,7 +52,7 @@ export function FreshnessBanner({ season }: { season: number }) {
       onClick={handleRefresh}
       disabled={refreshing}
       title="Re-check for new data"
-      className="hud-mono shrink-0 border border-slate-600/60 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-400 transition-colors hover:border-cyan-600 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+      className="hud-mono shrink-0 border border-slate-600/60 px-2 py-1 text-[10px] uppercase tracking-widest text-slate-400 transition-colors hover:border-red-600 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {refreshing ? "..." : "⟳ Refresh"}
     </button>
@@ -60,9 +60,9 @@ export function FreshnessBanner({ season }: { season: number }) {
 
   if (!freshness) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 border border-cyan-900/40 bg-[#0b1015]/60 px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-red-900/40 bg-[#12141a]/60 px-4 py-2">
         <p className="hud-mono text-[11px] text-slate-400">
-          <span className="mr-2 uppercase tracking-widest text-cyan-600">⬤ Checking...</span>
+          <span className="mr-2 uppercase tracking-widest text-red-600">⬤ Checking...</span>
           Checking for new data
         </p>
       </div>
@@ -76,7 +76,7 @@ export function FreshnessBanner({ season }: { season: number }) {
 
   if (availability.status === "locked") {
     return (
-      <div className="border border-red-500/50 bg-red-950/25 px-4 py-3 shadow-[0_0_15px_-5px_rgba(239,68,68,0.4)]">
+      <div className="border border-red-500/50 bg-red-950/25 px-4 py-3 shadow-[0_0_15px_-5px_rgba(212,0,0,0.4)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="hud-mono text-xs text-red-300">
             <span className="mr-2 uppercase tracking-widest text-red-400">⬤ Import Locked</span>
@@ -146,9 +146,9 @@ export function FreshnessBanner({ season }: { season: number }) {
   // Up to date and importable: a quiet line rather than nothing, so the state
   // is distinguishable from the API being blocked.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border border-cyan-900/40 bg-[#0b1015]/60 px-4 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 border border-red-900/40 bg-[#12141a]/60 px-4 py-2">
       <p className="hud-mono text-[11px] text-slate-400">
-        <span className="mr-2 uppercase tracking-widest text-cyan-600">⬤ API Available</span>
+        <span className="mr-2 uppercase tracking-widest text-red-600">⬤ API Available</span>
         Data is up to date
         {freshness.nextSession && (
           <>

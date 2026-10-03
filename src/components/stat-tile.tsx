@@ -15,9 +15,9 @@ export function StatTile({
   href?: string;
 }) {
   const content = (
-    <HudPanel className={href ? "transition-colors hover:bg-cyan-950/20" : undefined}>
+    <HudPanel className={href ? "transition-colors hover:bg-red-950/20" : undefined}>
       <p className="hud-mono text-[11px] uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="hud-mono mt-1 text-2xl font-bold text-cyan-300">{value}</p>
+      <p className="hud-mono mt-1 text-2xl font-bold text-red-300">{value}</p>
       {sublabel && <p className="hud-mono mt-0.5 truncate text-[11px] text-slate-400">{sublabel}</p>}
     </HudPanel>
   );

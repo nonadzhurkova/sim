@@ -25,7 +25,7 @@ export function SeasonPicker({
           href={`${basePath}?season=${s}`}
           className={`hud-mono border px-3 py-1 text-[11px] tracking-wider transition-colors ${
             s === activeSeason
-              ? "border-cyan-500 bg-cyan-950/60 text-cyan-300"
+              ? "border-red-500 bg-red-950/60 text-red-300"
               : "border-slate-800 text-slate-400 hover:border-slate-700"
           }`}
         >
